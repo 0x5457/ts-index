@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+bin/
+docs/api/
+*.db
+.env
+.temp/
