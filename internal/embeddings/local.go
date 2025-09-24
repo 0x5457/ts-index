@@ -27,7 +27,7 @@ func (e *LocalEmbedder) EmbedQuery(text string) ([]float32, error) {
 func hashToVector(s string, dim int) []float32 {
 	h := sha1.Sum([]byte(s))
 	vec := make([]float32, dim)
-	for i := 0; i < dim; i++ {
+	for i := range dim {
 		// repeat hash bytes to fill dim and normalize roughly
 		b := h[i%len(h)]
 		vec[i] = (float32(int8(b)) / 127.0)

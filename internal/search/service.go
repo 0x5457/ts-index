@@ -4,60 +4,33 @@ import (
 	"context"
 
 	"github.com/0x5457/ts-index/internal/embeddings"
-	"github.com/0x5457/ts-index/internal/featurizer"
 	"github.com/0x5457/ts-index/internal/models"
 	"github.com/0x5457/ts-index/internal/storage"
 )
 
-// Service orchestrates semantic search with feature extraction and returns enriched hits.
+// Service orchestrates semantic search for code snippets
 type Service struct {
-	Embedder   embeddings.Embedder
-	Vector     storage.VectorStore
-	Featurizer *featurizer.Featurizer
-	LLMConfig  featurizer.LLMConfig
+	Embedder embeddings.Embedder
+	Vector   storage.VectorStore
 }
 
-type EnrichedHit struct {
-	Hit      models.SemanticHit
-	Features map[string]float64 // feature_id -> coefficient (0..1)
-}
-
-// SearchWithFeatures performs vector search and, for the query text, extracts features
-// via the featurizer, returning both similarity hits and feature coefficients.
-func (s *Service) SearchWithFeatures(
+// Search performs vector search and returns the top-k most similar code snippets
+func (s *Service) Search(
 	ctx context.Context,
 	query string,
 	topK int,
-	samples int,
-	temperature float64,
-) ([]EnrichedHit, featurizer.FeatureEmbedding, error) {
-	// 1) semantic embedding + search
+) ([]models.SemanticHit, error) {
+	// Convert query to vector embedding
 	qvec, err := s.Embedder.EmbedQuery(query)
 	if err != nil {
-		return nil, featurizer.FeatureEmbedding{}, err
+		return nil, err
 	}
+
+	// Search for similar code snippets in the vector store
 	hits, err := s.Vector.Query(qvec, topK)
 	if err != nil {
-		return nil, featurizer.FeatureEmbedding{}, err
+		return nil, err
 	}
 
-	// 2) feature extraction for the query
-	emb, err := s.Featurizer.Embed(ctx, query, s.LLMConfig, temperature, samples)
-	if err != nil {
-		return nil, featurizer.FeatureEmbedding{}, err
-	}
-
-	// Build feature coefficients map once
-	coeffs := map[string]float64{}
-	for _, ft := range s.Featurizer.Features {
-		if v, ok := emb.Coefficient(ft.Identifier); ok {
-			coeffs[ft.Identifier] = v
-		}
-	}
-
-	enriched := make([]EnrichedHit, len(hits))
-	for i, h := range hits {
-		enriched[i] = EnrichedHit{Hit: h, Features: coeffs}
-	}
-	return enriched, emb, nil
+	return hits, nil
 }

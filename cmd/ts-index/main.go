@@ -7,13 +7,11 @@ import (
 	"path/filepath"
 
 	"github.com/0x5457/ts-index/internal/embeddings"
-	"github.com/0x5457/ts-index/internal/featurizer"
 	"github.com/0x5457/ts-index/internal/indexer/pipeline"
 	"github.com/0x5457/ts-index/internal/parser/tsparser"
 	"github.com/0x5457/ts-index/internal/search"
 	"github.com/0x5457/ts-index/internal/storage/memory"
 	"github.com/0x5457/ts-index/internal/storage/sqlite"
-
 	"github.com/spf13/cobra"
 )
 
@@ -106,34 +104,22 @@ func main() {
 					return err
 				}
 			}
-			fz := &featurizer.Featurizer{
-				SystemPrompt:  "You are a feature extractor",
-				MessagePrefix: "Analyze the query and output boolean features",
-				Features: []featurizer.Feature{
-					{Identifier: "has_code", Description: "query includes code or api names"},
-					{Identifier: "needs_debug", Description: "query implies debugging needed"},
-				},
-				CreateLLM: func(cfg featurizer.LLMConfig) featurizer.LLM { return &featurizer.MockLLM{} },
-			}
 			svc := &search.Service{
-				Embedder:   emb,
-				Vector:     vec,
-				Featurizer: fz,
-				LLMConfig:  featurizer.LLMConfig{Model: "mock"},
+				Embedder: emb,
+				Vector:   vec,
 			}
-			enriched, _, err := svc.SearchWithFeatures(cmd.Context(), query, topK, 2, 0.7)
+			hits, err := svc.Search(cmd.Context(), query, topK)
 			if err != nil {
 				return err
 			}
-			for _, e := range enriched {
+			for _, hit := range hits {
 				fmt.Printf(
-					"[%.3f] %s %s:%d-%d features=%v\n",
-					e.Hit.Score,
-					e.Hit.Chunk.Name,
-					e.Hit.Chunk.File,
-					e.Hit.Chunk.StartLine,
-					e.Hit.Chunk.EndLine,
-					e.Features,
+					"[%.3f] %s %s:%d-%d\n",
+					hit.Score,
+					hit.Chunk.Name,
+					hit.Chunk.File,
+					hit.Chunk.StartLine,
+					hit.Chunk.EndLine,
 				)
 			}
 			return nil
