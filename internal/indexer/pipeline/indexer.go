@@ -48,78 +48,205 @@ func New(
 }
 
 func (i *Indexer) IndexProject(root string) error {
-	files, err := listTSFiles(root)
-	if err != nil {
-		return err
+	progCh, errCh := i.IndexProjectProgress(context.Background(), root)
+	var retErr error
+	for range progCh {
+		// consume progress silently in sync mode
 	}
-
-	// Stage 1: parse files concurrently
-	parseCh := make(chan string, len(files))
-	resCh := make(chan struct {
-		syms []models.Symbol
-		chs  []models.CodeChunk
-		err  error
-	}, len(files))
-	var wgParse sync.WaitGroup
-	for w := 0; w < i.opt.ParseWorkers; w++ {
-		wgParse.Add(1)
-		go func() {
-			defer wgParse.Done()
-			for f := range parseCh {
-				syms, chs, err := i.p.ParseFile(f)
-				resCh <- struct {
-					syms []models.Symbol
-					chs  []models.CodeChunk
-					err  error
-				}{syms, chs, err}
+	if errCh != nil {
+		for err := range errCh {
+			if err != nil {
+				retErr = err
 			}
-		}()
+		}
 	}
-	for _, f := range files {
-		parseCh <- f
-	}
-	close(parseCh)
-	go func() { wgParse.Wait(); close(resCh) }()
+	return retErr
+}
 
-	// Stage 2: collect and embed in batches
-	var allSyms []models.Symbol
-	var batchChs []models.CodeChunk
-	flush := func(chs []models.CodeChunk) error {
-		if len(chs) == 0 {
-			return nil
+func (i *Indexer) IndexProjectProgress(
+	ctx context.Context,
+	root string,
+) (<-chan models.IndexProgress, <-chan error) {
+	progCh := make(chan models.IndexProgress, 128)
+	errCh := make(chan error, 1)
+
+	send := func(p models.IndexProgress) {
+		select {
+		case <-ctx.Done():
+			return
+		case progCh <- p:
 		}
-		texts := make([]string, len(chs))
-		for idx, ch := range chs {
-			texts[idx] = buildEmbedText(ch)
-		}
-		vecs, err := i.e.EmbedTexts(texts)
-		if err != nil {
-			return err
-		}
-		return i.vec.Upsert(chs, vecs)
 	}
-	for r := range resCh {
-		if r.err != nil {
-			return r.err
+
+	go func() {
+		defer close(progCh)
+		defer close(errCh)
+
+		files, err := listTSFiles(root)
+		if err != nil {
+			errCh <- err
+			return
 		}
-		allSyms = append(allSyms, r.syms...)
-		batchChs = append(batchChs, r.chs...)
-		for len(batchChs) >= i.opt.EmbedBatchSize {
-			if err := flush(batchChs[:i.opt.EmbedBatchSize]); err != nil {
+		totalFiles := len(files)
+		send(models.IndexProgress{
+			Stage:      models.IndexStageScan,
+			TotalFiles: totalFiles,
+			Message:    "scan complete",
+			Percent:    0,
+		})
+
+		// Stage 1: parse files concurrently
+		parseCh := make(chan string, totalFiles)
+		type parseRes struct {
+			syms []models.Symbol
+			chs  []models.CodeChunk
+			err  error
+			file string
+		}
+		resCh := make(chan parseRes, totalFiles)
+
+		var wgParse sync.WaitGroup
+		for w := 0; w < i.opt.ParseWorkers; w++ {
+			wgParse.Add(1)
+			go func() {
+				defer wgParse.Done()
+				for f := range parseCh {
+					syms, chs, err := i.p.ParseFile(f)
+					select {
+					case <-ctx.Done():
+						return
+					case resCh <- parseRes{syms: syms, chs: chs, err: err, file: f}:
+					}
+				}
+			}()
+		}
+		for _, f := range files {
+			parseCh <- f
+		}
+		close(parseCh)
+		go func() { wgParse.Wait(); close(resCh) }()
+
+		// Stage 2: collect and embed in batches
+		var allSyms []models.Symbol
+		var batchChs []models.CodeChunk
+		parsedFiles := 0
+		totalChunks := 0
+		embeddedChunks := 0
+
+		// Percent policy:
+		// - Parse 60%
+		// - Embed 35%
+		// - Symbol upsert 5%
+		updateParseProgress := func(currentFile string) {
+			pct := float32(0)
+			if totalFiles > 0 {
+				pct = 0.6 * float32(parsedFiles) / float32(totalFiles)
+			}
+			send(models.IndexProgress{
+				Stage:       models.IndexStageParse,
+				TotalFiles:  totalFiles,
+				ParsedFiles: parsedFiles,
+				CurrentFile: currentFile,
+				Percent:     pct,
+			})
+		}
+		updateEmbedProgress := func() {
+			pct := float32(0.6)
+			if totalChunks > 0 {
+				pct = 0.6 + 0.35*float32(embeddedChunks)/float32(totalChunks)
+			}
+			send(models.IndexProgress{
+				Stage:          models.IndexStageEmbed,
+				TotalFiles:     totalFiles,
+				ParsedFiles:    parsedFiles,
+				TotalChunks:    totalChunks,
+				EmbeddedChunks: embeddedChunks,
+				Percent:        pct,
+			})
+		}
+
+		flush := func(chs []models.CodeChunk) error {
+			if len(chs) == 0 {
+				return nil
+			}
+			texts := make([]string, len(chs))
+			for idx, ch := range chs {
+				texts[idx] = buildEmbedText(ch)
+			}
+			vecs, err := i.e.EmbedTexts(texts)
+			if err != nil {
 				return err
 			}
-			batchChs = batchChs[i.opt.EmbedBatchSize:]
+			if err := i.vec.Upsert(chs, vecs); err != nil {
+				return err
+			}
+			embeddedChunks += len(chs)
+			updateEmbedProgress()
+			return nil
 		}
-	}
-	if err := flush(batchChs); err != nil {
-		return err
-	}
 
-	// upsert symbols once at the end (can be large; consider chunking if needed)
-	if err := i.sym.UpsertSymbols(allSyms); err != nil {
-		return err
-	}
-	return nil
+		for r := range resCh {
+			if r.err != nil {
+				errCh <- r.err
+				return
+			}
+			allSyms = append(allSyms, r.syms...)
+			batchChs = append(batchChs, r.chs...)
+			totalChunks += len(r.chs)
+			parsedFiles++
+			updateParseProgress(r.file)
+
+			for len(batchChs) >= i.opt.EmbedBatchSize {
+				if err := flush(batchChs[:i.opt.EmbedBatchSize]); err != nil {
+					errCh <- err
+					return
+				}
+				batchChs = batchChs[i.opt.EmbedBatchSize:]
+			}
+		}
+
+		// Parsing finished; switch to embed stage start at 60%
+		send(models.IndexProgress{
+			Stage:       models.IndexStageEmbed,
+			TotalFiles:  totalFiles,
+			ParsedFiles: parsedFiles,
+			TotalChunks: totalChunks,
+			Percent:     0.6,
+		})
+
+		if err := flush(batchChs); err != nil {
+			errCh <- err
+			return
+		}
+
+		// Symbols upsert
+		send(models.IndexProgress{
+			Stage:          models.IndexStageSymbols,
+			Percent:        0.95,
+			Message:        "upserting symbols",
+			TotalFiles:     totalFiles,
+			ParsedFiles:    parsedFiles,
+			TotalChunks:    totalChunks,
+			EmbeddedChunks: embeddedChunks,
+		})
+		if err := i.sym.UpsertSymbols(allSyms); err != nil {
+			errCh <- err
+			return
+		}
+
+		// Done
+		send(models.IndexProgress{
+			Stage:          models.IndexStageDone,
+			TotalFiles:     totalFiles,
+			ParsedFiles:    parsedFiles,
+			TotalChunks:    totalChunks,
+			EmbeddedChunks: embeddedChunks,
+			Percent:        1.0,
+			Message:        "index completed",
+		})
+	}()
+
+	return progCh, errCh
 }
 
 func (i *Indexer) IndexFile(path string) error {

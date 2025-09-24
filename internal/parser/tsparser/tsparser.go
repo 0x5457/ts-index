@@ -1,6 +1,7 @@
 package tsparser
 
 import (
+	"bytes"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -171,14 +172,12 @@ func collectVariables(
 	symbols *[]models.Symbol,
 	chunks *[]models.CodeChunk,
 ) {
-	if n.Kind() == "variable_declarator" {
-		name := childIdentifier(n, code)
-		appendDecl(symbols, chunks, path, language, n.Kind(), code, n, models.SymbolVariable, name)
+	// Only add symbol/chunk for the exact declarator node to avoid duplicates.
+	if n.Kind() != "variable_declarator" {
 		return
 	}
-	for i := uint(0); i < n.ChildCount(); i++ {
-		collectVariables(n.Child(i), path, language, code, symbols, chunks)
-	}
+	name := childIdentifier(n, code)
+	appendDecl(symbols, chunks, path, language, n.Kind(), code, n, models.SymbolVariable, name)
 }
 
 func appendDecl(
@@ -196,7 +195,7 @@ func appendDecl(
 	endByte := int32(n.EndByte())
 	content := string(code[n.StartByte():n.EndByte()])
 	sig := firstLine(content)
-	doc := ""
+	doc := extractDocstring(code, n)
 	id := util.GenerateID(path, int(startLine), int(endLine), string(kind), name)
 	*symbols = append(
 		*symbols,
@@ -242,3 +241,263 @@ func firstLine(s string) string {
 }
 
 var _ parser.Parser = (*TSParser)(nil)
+
+// extractDocstring tries to capture the leading doc comment for a node.
+// It supports JSDoc-style block comments (/** ... */) and consecutive
+// single-line comments (// ...), immediately preceding the node with only
+// whitespace in between.
+func extractDocstring(code []byte, n *tree_sitter.Node) string {
+	if n == nil {
+		return ""
+	}
+	start := int(n.StartByte())
+	if start < 0 {
+		return ""
+	}
+
+	var parts []string
+
+	// Leading: consider only the bytes before the declaration line start
+	if start > 0 {
+		lineStart := bytes.LastIndexByte(code[:start], '\n') + 1
+		pre := code[:lineStart]
+		pre = trimRightWhitespace(pre)
+		if len(pre) > 0 {
+			// Find the nearest preceding block comment that begins at line start and is JSDoc
+			closeIdx := bytes.LastIndex(pre, []byte("*/"))
+			for closeIdx >= 0 {
+				openIdx := bytes.LastIndex(pre[:closeIdx], []byte("/*"))
+				if openIdx < 0 {
+					break
+				}
+				openLineStart := bytes.LastIndexByte(pre[:openIdx], '\n') + 1
+				beginsAtLine := len(bytes.TrimSpace(pre[openLineStart:openIdx])) == 0
+				raw := pre[openIdx : closeIdx+2]
+				isJSDoc := bytes.HasPrefix(bytes.TrimLeft(raw, " \t\r\n"), []byte("/**"))
+				tail := bytes.TrimSpace(pre[closeIdx+2:])
+				if beginsAtLine && isJSDoc && (len(tail) == 0 || isOnlyTSModifiers(tail)) {
+					if s := cleanBlockComment(raw); s != "" {
+						parts = append(parts, s)
+					}
+					break
+				}
+				// move to previous block (before this one's open)
+				closeIdx = bytes.LastIndex(pre[:openIdx], []byte("*/"))
+			}
+
+			// Try consecutive //-style lines immediately preceding
+			lines := collectLineCommentsBeforeLine(code, lineStart)
+			if len(lines) > 0 {
+				for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+					lines[i], lines[j] = lines[j], lines[i]
+				}
+				s := strings.TrimSpace(strings.Join(lines, "\n"))
+				if s != "" {
+					parts = append(parts, s)
+				}
+			}
+		}
+	}
+
+	// Inline on start line
+	if s := extractInlineOnStartLine(code, n); s != "" {
+		parts = append(parts, s)
+	}
+
+	// Trailing on end line
+	if s := extractTrailingOnEndLine(code, n); s != "" {
+		// If we already have block/line doc before, append trailing only if it is not duplicate
+		if len(parts) == 0 || parts[len(parts)-1] != s {
+			parts = append(parts, s)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func trimRightWhitespace(b []byte) []byte {
+	i := len(b) - 1
+	for i >= 0 {
+		c := b[i]
+		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+			break
+		}
+		i--
+	}
+	return b[:i+1]
+}
+
+// looksLikeDocBlock indicates whether the block comment is a JSDoc (/** ... */)
+// removed unused looksLikeDocBlock
+
+func cleanBlockComment(raw []byte) string {
+	s := string(raw)
+	// Remove /*, /** and */
+	s = strings.TrimPrefix(s, "/**")
+	s = strings.TrimPrefix(s, "/*")
+	if idx := strings.LastIndex(s, "*/"); idx >= 0 {
+		s = s[:idx]
+	}
+	// Split lines and remove leading * and single leading space after *
+	out := make([]string, 0, 8)
+	for _, line := range strings.Split(s, "\n") {
+		l := strings.TrimRight(line, " \t\r")
+		l = strings.TrimLeft(l, " \t")
+		if strings.HasPrefix(l, "*") {
+			l = strings.TrimPrefix(l, "*")
+			if len(l) > 0 && (l[0] == ' ' || l[0] == '\t') {
+				l = l[1:]
+			}
+		}
+		out = append(out, l)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+// removed unused collectLineComments
+
+func collectLineCommentsBeforeLine(code []byte, lineStart int) []string {
+	var lines []string
+	if lineStart <= 0 || lineStart > len(code) {
+		return lines
+	}
+	// j points to the newline ending the previous line
+	j := lineStart - 1
+	for j >= 0 {
+		prevLineStart := bytes.LastIndexByte(code[:j], '\n') + 1
+		line := code[prevLineStart : j+1]
+		// Stop if blank line
+		if len(bytes.TrimSpace(line)) == 0 {
+			break
+		}
+		ltrim := bytes.TrimLeft(line, " \t")
+		if !bytes.HasPrefix(ltrim, []byte("//")) {
+			break
+		}
+		content := string(bytes.TrimSpace(bytes.TrimPrefix(ltrim, []byte("//"))))
+		lines = append(lines, content)
+		if prevLineStart == 0 {
+			break
+		}
+		j = prevLineStart - 1
+	}
+	return lines
+}
+
+// isOnlyTSModifiers reports whether b contains only TypeScript declaration modifiers
+// and whitespace, e.g., export, default, async, declare, abstract, readonly.
+func isOnlyTSModifiers(b []byte) bool {
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return true
+	}
+	// Split by spaces; if any token contains non-letters (like identifier), return false
+	tokens := strings.Fields(s)
+	if len(tokens) == 0 {
+		return true
+	}
+	allowed := map[string]struct{}{
+		"export":    {},
+		"default":   {},
+		"async":     {},
+		"declare":   {},
+		"abstract":  {},
+		"readonly":  {},
+		"public":    {},
+		"private":   {},
+		"protected": {},
+		"static":    {},
+	}
+	for _, t := range tokens {
+		if _, ok := allowed[t]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func extractInlineOnStartLine(code []byte, n *tree_sitter.Node) string {
+	start := int(n.StartByte())
+	end := int(n.EndByte())
+	if start < 0 || start >= len(code) {
+		return ""
+	}
+	if end < 0 || end > len(code) || end < start {
+		end = len(code)
+	}
+	// Only search within the node span to capture true inline block comments (e.g., parameter comments)
+	// We intentionally ignore '//' here to avoid swallowing trailing line comments which may also fall within
+	// the node span depending on the grammar.
+	seg := code[start:end]
+	// up to newline
+	nl := bytes.IndexByte(seg, '\n')
+	if nl >= 0 {
+		seg = seg[:nl]
+	}
+	idxBlock := bytes.Index(seg, []byte("/*"))
+	if idxBlock < 0 {
+		return ""
+	}
+	rest := seg[idxBlock+2:]
+	close := bytes.Index(rest, []byte("*/"))
+	if close < 0 {
+		return ""
+	}
+	raw := append([]byte("/*"), rest[:close]...)
+	raw = append(raw, []byte("*/")...)
+	return strings.TrimSpace(cleanBlockComment(raw))
+}
+
+func extractTrailingOnEndLine(code []byte, n *tree_sitter.Node) string {
+	end := int(n.EndByte())
+	if end < 0 || end > len(code) {
+		return ""
+	}
+	// Reference position for locating the end line: use end-1 to stay on the line where the node ends
+	ref := end
+	if ref > 0 {
+		ref = ref - 1
+	}
+	// Start of the line where the node ends
+	lineStart := bytes.LastIndexByte(code[:ref], '\n') + 1
+	// End of that line
+	idx := bytes.IndexByte(code[ref:], '\n')
+	var lineEnd int
+	if idx >= 0 {
+		lineEnd = ref + idx
+	} else {
+		lineEnd = len(code)
+	}
+	if lineEnd < lineStart {
+		return ""
+	}
+	line := code[lineStart:lineEnd]
+	// Position within the line where to start searching for trailing comment
+	posInLine := end - lineStart
+	if posInLine < 0 {
+		posInLine = 0
+	}
+	if posInLine > len(line) {
+		posInLine = len(line)
+	}
+	seg := line[posInLine:]
+	if len(bytes.TrimSpace(seg)) == 0 {
+		// still try whole line to catch cases where end points at newline
+		seg = line
+	}
+	// Prefer the last // anywhere on the end line
+	if idx := bytes.LastIndex(seg, []byte("//")); idx >= 0 {
+		return strings.TrimSpace(string(seg[idx+2:]))
+	}
+	// Fallback: last /* ... */ on the end line
+	if startIdx := bytes.LastIndex(seg, []byte("/*")); startIdx >= 0 {
+		if endIdx := bytes.Index(seg[startIdx+2:], []byte("*/")); endIdx >= 0 {
+			raw := append([]byte("/*"), seg[startIdx+2:startIdx+2+endIdx]...)
+			raw = append(raw, []byte("*/")...)
+			return strings.TrimSpace(cleanBlockComment(raw))
+		}
+	}
+	return ""
+}
+
+// removed unused extractInlineFromSegment

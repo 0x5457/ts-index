@@ -50,3 +50,26 @@ type SemanticHit struct {
 type SymbolHit struct {
 	Symbol Symbol
 }
+
+// Index progress and stages
+type IndexStage string
+
+const (
+	IndexStageScan    IndexStage = "scan"
+	IndexStageParse   IndexStage = "parse"
+	IndexStageEmbed   IndexStage = "embed"
+	IndexStageSymbols IndexStage = "symbols"
+	IndexStageDone    IndexStage = "done"
+)
+
+// IndexProgress represents streaming progress updates for indexing
+type IndexProgress struct {
+	Stage          IndexStage
+	TotalFiles     int
+	ParsedFiles    int
+	TotalChunks    int
+	EmbeddedChunks int
+	CurrentFile    string
+	Message        string
+	Percent        float32
+}

@@ -93,3 +93,83 @@ export function Component(): JSX.Element { return <div/> }
 		t.Fatalf("expected at least one variable")
 	}
 }
+
+func Test_TSParser_Docstrings(t *testing.T) {
+	tmp := t.TempDir()
+	code := `
+/**
+ * add jsdoc
+ * multi line
+ */
+export function add(a: number, b: number): number { return a + b } // add trailing
+
+// line doc 1
+// line doc 2
+export const x = 1
+
+export function hello(): void {} // hello doc
+
+export const y = 2 /* y block doc */
+
+export function paramDoc(a: number /* a is value */): number { return a } // end doc
+`
+	writeFile(t, tmp, "doc.ts", code)
+
+	parser := p.New()
+	symbols, chunks, err := parser.ParseFile(filepath.Join(tmp, "doc.ts"))
+	if err != nil {
+		t.Fatalf("ParseFile error: %v", err)
+	}
+
+	expect := map[string]string{
+		"add":      "add jsdoc\nmulti line\nadd trailing",
+		"x":        "line doc 1\nline doc 2",
+		"hello":    "hello doc",
+		"y":        "y block doc",
+		"paramDoc": "a is value\nend doc",
+	}
+
+	// Verify symbols
+	for name, want := range expect {
+		found := false
+		for _, s := range symbols {
+			if s.Name == name {
+				found = true
+				if s.Docstring != want {
+					t.Fatalf(
+						"symbol %s docstring mismatch:\nwant=\n%q\nget =\n%q",
+						name,
+						want,
+						s.Docstring,
+					)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("symbol %s not found", name)
+		}
+	}
+
+	// Verify chunks
+	for name, want := range expect {
+		found := false
+		for _, c := range chunks {
+			if c.Name == name {
+				found = true
+				if c.Docstring != want {
+					t.Fatalf(
+						"chunk %s docstring mismatch:\nwant=\n%q\nget =\n%q",
+						name,
+						want,
+						c.Docstring,
+					)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("chunk %s not found", name)
+		}
+	}
+}

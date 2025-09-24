@@ -8,8 +8,8 @@ import (
 	"github.com/0x5457/ts-index/internal/embeddings"
 	"github.com/0x5457/ts-index/internal/indexer/pipeline"
 	"github.com/0x5457/ts-index/internal/parser/tsparser"
-	"github.com/0x5457/ts-index/internal/storage/memory"
 	"github.com/0x5457/ts-index/internal/storage/sqlite"
+	"github.com/0x5457/ts-index/internal/storage/sqlvec"
 )
 
 func Test_Indexer_E2E_TS(t *testing.T) {
@@ -29,7 +29,10 @@ func Test_Indexer_E2E_TS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := memory.NewInMemoryVectorStore()
+	v, err := sqlvec.New(db, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	idx := pipeline.New(p, e, s, v, pipeline.Options{EmbedBatchSize: 2})
 
 	if err := idx.IndexProject(tmp); err != nil {
