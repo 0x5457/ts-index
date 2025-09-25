@@ -143,11 +143,13 @@ func (i *Indexer) IndexProjectProgress(
 				pct = 0.6 * float32(parsedFiles) / float32(totalFiles)
 			}
 			send(models.IndexProgress{
-				Stage:       models.IndexStageParse,
-				TotalFiles:  totalFiles,
-				ParsedFiles: parsedFiles,
-				CurrentFile: currentFile,
-				Percent:     pct,
+				Stage:          models.IndexStageParse,
+				TotalFiles:     totalFiles,
+				ParsedFiles:    parsedFiles,
+				TotalChunks:    totalChunks,
+				EmbeddedChunks: embeddedChunks,
+				CurrentFile:    currentFile,
+				Percent:        pct,
 			})
 		}
 		updateEmbedProgress := func() {
@@ -207,11 +209,12 @@ func (i *Indexer) IndexProjectProgress(
 
 		// Parsing finished; switch to embed stage start at 60%
 		send(models.IndexProgress{
-			Stage:       models.IndexStageEmbed,
-			TotalFiles:  totalFiles,
-			ParsedFiles: parsedFiles,
-			TotalChunks: totalChunks,
-			Percent:     0.6,
+			Stage:          models.IndexStageEmbed,
+			TotalFiles:     totalFiles,
+			ParsedFiles:    parsedFiles,
+			TotalChunks:    totalChunks,
+			EmbeddedChunks: embeddedChunks,
+			Percent:        0.6,
 		})
 
 		if err := flush(batchChs); err != nil {
