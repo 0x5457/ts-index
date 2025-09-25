@@ -327,9 +327,6 @@ func trimRightWhitespace(b []byte) []byte {
 	return b[:i+1]
 }
 
-// looksLikeDocBlock indicates whether the block comment is a JSDoc (/** ... */)
-// removed unused looksLikeDocBlock
-
 func cleanBlockComment(raw []byte) string {
 	s := string(raw)
 	// Remove /*, /** and */
@@ -353,8 +350,6 @@ func cleanBlockComment(raw []byte) string {
 	}
 	return strings.TrimSpace(strings.Join(out, "\n"))
 }
-
-// removed unused collectLineComments
 
 func collectLineCommentsBeforeLine(code []byte, lineStart int) []string {
 	var lines []string
@@ -499,5 +494,3 @@ func extractTrailingOnEndLine(code []byte, n *tree_sitter.Node) string {
 	}
 	return ""
 }
-
-// removed unused extractInlineFromSegment
