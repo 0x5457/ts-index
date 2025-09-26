@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/0x5457/ts-index/internal/indexer"
+	"github.com/0x5457/ts-index/internal/search"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -86,8 +88,12 @@ func NewSSEClient(ctx context.Context, sseURL string) (*Client, error) {
 }
 
 // NewInProcessClient creates an MCP client connected to an in-process server instance.
-func NewInProcessClient(ctx context.Context, config ServerConfig) (*Client, error) {
-	srv := NewWithOptions(ServerOptions(config))
+func NewInProcessClient(
+	ctx context.Context,
+	searchService *search.Service,
+	indexer indexer.Indexer,
+) (*Client, error) {
+	srv := New(searchService, indexer)
 	tr := transport.NewInProcessTransport(srv)
 	if err := tr.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start in-process transport: %w", err)

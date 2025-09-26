@@ -9,7 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0x5457/ts-index/internal/constants"
+	"github.com/0x5457/ts-index/internal/factory"
+	"github.com/0x5457/ts-index/internal/indexer"
 	appmcp "github.com/0x5457/ts-index/internal/mcp"
+	"github.com/0x5457/ts-index/internal/search"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 )
@@ -122,7 +126,7 @@ Example:
 	cmd.Flags().StringVarP(&project, "project", "p", "", "project path")
 	cmd.Flags().StringVarP(&db, "db", "d", "", "SQLite database path")
 	cmd.Flags().
-		StringVar(&embedURL, "embed-url", "http://localhost:8000/embed", "embed API address")
+		StringVar(&embedURL, "embed-url", constants.DefaultEmbedURL, "embed API address")
 	cmd.Flags().
 		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
 	cmd.Flags().
@@ -265,7 +269,7 @@ func newMCPSearchCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&project, "project", "p", "", "project path")
 	cmd.Flags().StringVarP(&db, "db", "d", "", "SQLite database path")
 	cmd.Flags().
-		StringVar(&embedURL, "embed-url", "http://localhost:8000/embed", "embed API address")
+		StringVar(&embedURL, "embed-url", constants.DefaultEmbedURL, "embed API address")
 	cmd.Flags().IntVarP(&topK, "top-k", "k", 5, "number of results")
 	cmd.Flags().
 		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
@@ -396,7 +400,21 @@ func createMCPClient(
 		}
 		return appmcp.NewSSEClient(ctx, address)
 	case transportInproc:
-		return appmcp.NewInProcessClient(ctx, config)
+		var searchService *search.Service
+		var indexer indexer.Indexer
+		if config.DB != "" {
+			factory := factory.NewComponentFactory(factory.ComponentConfig{
+				DBPath:   config.DB,
+				EmbedURL: config.EmbedURL,
+			})
+			components, err := factory.CreateComponents()
+			if err != nil {
+				return nil, fmt.Errorf("initialize components failed: %w", err)
+			}
+			searchService = components.Searcher
+			indexer = factory.CreateIndexerFromComponents(components)
+		}
+		return appmcp.NewInProcessClient(ctx, searchService, indexer)
 	default:
 		return nil, fmt.Errorf(
 			"unsupported transport: %s (supported: stdio, http, sse, inproc)",

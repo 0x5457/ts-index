@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/0x5457/ts-index/internal/constants"
 	mcpclient "github.com/0x5457/ts-index/internal/mcp"
 	"github.com/spf13/cobra"
 )
@@ -93,7 +94,7 @@ func NewSearchCommand() *cobra.Command {
 		},
 	}
 
-	defaultEmbUrl := "http://localhost:8000/embed"
+	defaultEmbUrl := constants.DefaultEmbedURL
 	defaultDbPath := filepath.Join(os.TempDir(), "ts_index.db")
 
 	cmd.Flags().

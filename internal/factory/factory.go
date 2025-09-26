@@ -3,6 +3,7 @@ package factory
 import (
 	"fmt"
 
+	"github.com/0x5457/ts-index/internal/constants"
 	"github.com/0x5457/ts-index/internal/embeddings"
 	"github.com/0x5457/ts-index/internal/indexer/pipeline"
 	"github.com/0x5457/ts-index/internal/parser"
@@ -38,7 +39,7 @@ type ComponentFactory struct {
 func NewComponentFactory(config ComponentConfig) *ComponentFactory {
 	// Set defaults
 	if config.EmbedURL == "" {
-		config.EmbedURL = "http://localhost:8000/embed"
+		config.EmbedURL = constants.DefaultEmbedURL
 	}
 	if config.VectorDimension == 0 {
 		config.VectorDimension = 0 // Will be inferred
@@ -72,7 +73,10 @@ func (f *ComponentFactory) CreateComponents() (*Components, error) {
 	}
 
 	// Create search service
-	searcher := f.CreateSearchService(embedder, vecStore)
+	searcher := &search.Service{
+		Embedder: embedder,
+		Vector:   vecStore,
+	}
 
 	return &Components{
 		Parser:   parser,
@@ -108,19 +112,8 @@ func (f *ComponentFactory) CreateVectorStore() (storage.VectorStore, error) {
 	return sqlvec.New(f.config.DBPath, f.config.VectorDimension)
 }
 
-// CreateSearchService creates a search service instance
-func (f *ComponentFactory) CreateSearchService(
-	embedder embeddings.Embedder,
-	vecStore storage.VectorStore,
-) *search.Service {
-	return &search.Service{
-		Embedder: embedder,
-		Vector:   vecStore,
-	}
-}
-
-// CreateIndexer creates an indexer instance with the given components
-func (f *ComponentFactory) CreateIndexer(components *Components) *pipeline.Indexer {
+// CreateIndexerFromComponents creates an indexer instance with the given components
+func (f *ComponentFactory) CreateIndexerFromComponents(components *Components) *pipeline.Indexer {
 	return pipeline.New(
 		components.Parser,
 		components.Embedder,
@@ -142,6 +135,28 @@ func (f *ComponentFactory) CreateIndexerWithOptions(
 		components.VecStore,
 		opts,
 	)
+}
+
+// CreateComponentsWithConfig creates components with custom configuration
+// This is useful for one-time operations that need different settings
+func (f *ComponentFactory) CreateComponentsWithConfig(config ComponentConfig) (*Components, error) {
+	if config.DBPath == "" {
+		return nil, fmt.Errorf("database path must be specified")
+	}
+
+	// Set defaults like in NewComponentFactory
+	if config.EmbedURL == "" {
+		config.EmbedURL = constants.DefaultEmbedURL
+	}
+	if config.VectorDimension == 0 {
+		config.VectorDimension = 0 // Will be inferred
+	}
+
+	// Create temporary factory with custom config
+	tempFactory := &ComponentFactory{config: config}
+
+	// Create components using the temporary factory
+	return tempFactory.CreateComponents()
 }
 
 // Cleanup releases resources held by components

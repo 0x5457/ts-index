@@ -15,7 +15,7 @@ import (
 
 // TestStreamableHTTPTransport verifies initialize and list-tools via streamable-http
 func TestStreamableHTTPTransport(t *testing.T) {
-	s := NewWithOptions(ServerOptions{})
+	s := New(nil, nil)
 	h := server.NewStreamableHTTPServer(s)
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
@@ -55,7 +55,7 @@ func TestStreamableHTTPTransport(t *testing.T) {
 
 // TestSSETransport verifies initialize and list-tools via SSE
 func TestSSETransport(t *testing.T) {
-	s := NewWithOptions(ServerOptions{})
+	s := New(nil, nil)
 	sse := server.NewSSEServer(s,
 		server.WithStaticBasePath("/mcp"),
 	)
@@ -96,7 +96,7 @@ func TestSSETransport(t *testing.T) {
 
 // TestInProcessTransport verifies initialize and list-tools via in-process
 func TestInProcessTransport(t *testing.T) {
-	s := NewWithOptions(ServerOptions{})
+	s := New(nil, nil)
 	tr := transport.NewInProcessTransport(s)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)

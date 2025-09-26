@@ -3,16 +3,10 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os"
 
-	"github.com/0x5457/ts-index/internal/embeddings"
-	"github.com/0x5457/ts-index/internal/factory"
-	"github.com/0x5457/ts-index/internal/indexer/pipeline"
+	"github.com/0x5457/ts-index/internal/indexer"
 	"github.com/0x5457/ts-index/internal/lsp"
-	"github.com/0x5457/ts-index/internal/parser/tsparser"
 	"github.com/0x5457/ts-index/internal/search"
-	"github.com/0x5457/ts-index/internal/storage/sqlite"
-	"github.com/0x5457/ts-index/internal/storage/sqlvec"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -24,42 +18,23 @@ type ServerOptions struct {
 	EmbedURL string // Embedding API URL
 }
 
-// New returns an MCP server exposing search and LSP tools.
-// It intentionally excludes index and LSP install commands.
-func New() *server.MCPServer {
-	return NewWithOptions(ServerOptions{})
-}
-
-// Server wraps an MCP server with configuration options
+// Server wraps an MCP server with direct interface dependencies
 type Server struct {
-	opts       ServerOptions
-	server     *server.MCPServer
-	factory    *factory.ComponentFactory
-	components *factory.Components
+	server        *server.MCPServer
+	searchService *search.Service // Search service (can be nil)
+	indexer       indexer.Indexer // Indexer (can be nil)
 }
 
-// NewWithOptions returns an MCP server with the specified options.
-// If Project is specified, the server will pre-index it on startup.
-func NewWithOptions(opts ServerOptions) *server.MCPServer {
-	// Set default values
-	if opts.EmbedURL == "" {
-		opts.EmbedURL = "http://localhost:8000/embed"
-	}
-
+// New returns an MCP server with the given services.
+func New(searchService *search.Service, indexer indexer.Indexer) *server.MCPServer {
 	srv := &Server{
-		opts: opts,
+		searchService: searchService,
+		indexer:       indexer,
 		server: server.NewMCPServer(
 			"ts-index/mcp",
 			"0.1.0",
 			server.WithToolCapabilities(true),
 		),
-	}
-
-	// Initialize shared components if DB is configured
-	if opts.DB != "" {
-		if err := srv.initComponents(); err != nil {
-			fmt.Fprintf(os.Stderr, "initialize components failed: %v\n", err)
-		}
 	}
 
 	// Search tools
@@ -74,62 +49,7 @@ func NewWithOptions(opts ServerOptions) *server.MCPServer {
 	srv.server.AddTool(newLSPListTool(), srv.handleLSPList)
 	srv.server.AddTool(newLSPHealthTool(), srv.handleLSPHealth)
 
-	// Pre-index project if specified
-	if opts.Project != "" {
-		fmt.Fprintf(os.Stderr, "pre-index project: %s\n", opts.Project)
-		if err := srv.preIndexProject(); err != nil {
-			fmt.Fprintf(os.Stderr, "pre-index failed: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "pre-index completed\n")
-		}
-	}
-
 	return srv.server
-}
-
-// initComponents initializes shared components that can be reused across requests
-func (srv *Server) initComponents() error {
-	if srv.opts.DB == "" {
-		return fmt.Errorf("database path must be specified")
-	}
-
-	// Create component factory
-	srv.factory = factory.NewComponentFactory(factory.ComponentConfig{
-		DBPath:   srv.opts.DB,
-		EmbedURL: srv.opts.EmbedURL,
-	})
-
-	// Create components
-	components, err := srv.factory.CreateComponents()
-	if err != nil {
-		return fmt.Errorf("initialize components failed: %w", err)
-	}
-	srv.components = components
-
-	return nil
-}
-
-// Cleanup releases resources held by the server
-func (srv *Server) Cleanup() error {
-	if srv.components != nil {
-		return srv.components.Cleanup()
-	}
-	return nil
-}
-
-// preIndexProject indexes the configured project using shared components
-func (srv *Server) preIndexProject() error {
-	if srv.opts.Project == "" {
-		return fmt.Errorf("project path must be specified")
-	}
-
-	// Ensure components are initialized
-	if srv.factory == nil || srv.components == nil {
-		return fmt.Errorf("components not initialized")
-	}
-
-	idx := srv.factory.CreateIndexer(srv.components)
-	return idx.IndexProject(srv.opts.Project)
 }
 
 // Tool definitions
@@ -138,8 +58,14 @@ func newSemanticSearchTool() mcp.Tool {
 		"semantic_search",
 		mcp.WithDescription("Semantic code search by natural language query"),
 		mcp.WithString("query", mcp.Description("Natural language query"), mcp.Required()),
-		mcp.WithString("db", mcp.Description("SQLite DB path")),
-		mcp.WithString("embed_url", mcp.Description("Embedding API URL")),
+		mcp.WithString(
+			"db",
+			mcp.Description("SQLite DB path (optional, uses server default if not provided)"),
+		),
+		mcp.WithString(
+			"embed_url",
+			mcp.Description("Embedding API URL (optional, uses server default if not provided)"),
+		),
 		mcp.WithNumber("top_k", mcp.Description("Top K results"), mcp.DefaultNumber(5)),
 		mcp.WithString(
 			"project",
@@ -153,7 +79,10 @@ func newSymbolSearchTool() mcp.Tool {
 		"symbol_search",
 		mcp.WithDescription("Exact symbol name search in symbol store"),
 		mcp.WithString("name", mcp.Description("Symbol name"), mcp.Required()),
-		mcp.WithString("db", mcp.Description("SQLite DB path")),
+		mcp.WithString(
+			"db",
+			mcp.Description("SQLite DB path (optional, uses server default if not provided)"),
+		),
 	)
 }
 
@@ -232,70 +161,33 @@ func (srv *Server) handleSemanticSearch(
 	topK := req.GetInt("top_k", 5)
 	project := req.GetString("project", "")
 
-	// Check if we should use shared components or create new ones for custom config
-	dbPath := req.GetString("db", srv.opts.DB)
-	embURL := req.GetString("embed_url", srv.opts.EmbedURL)
+	// Check for custom config parameters
+	dbPath := req.GetString("db", "")
+	embURL := req.GetString("embed_url", "")
 
-	// If using custom config, create temporary components
-	if dbPath != srv.opts.DB || embURL != srv.opts.EmbedURL {
-		return srv.handleSemanticSearchWithCustomConfig(ctx, query, dbPath, embURL, project, topK)
-	}
-
-	// Use shared components for default config
-	if srv.components == nil || srv.components.Searcher == nil {
-		return mcp.NewToolResultError("search service not initialized"), nil
-	}
-
-	// Index project if specified and different from default
-	if project != "" && project != srv.opts.Project {
-		idx := srv.factory.CreateIndexer(srv.components)
-		if err := idx.IndexProject(project); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("index project failed: %v", err)), nil
-		}
-	}
-
-	hits, err := srv.components.Searcher.Search(ctx, query, topK)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultStructuredOnly(hits), nil
-}
-
-// handleSemanticSearchWithCustomConfig handles semantic search with custom db/embed URL
-func (srv *Server) handleSemanticSearchWithCustomConfig(
-	ctx context.Context,
-	query, dbPath, embURL, project string,
-	topK int,
-) (*mcp.CallToolResult, error) {
-	if dbPath == "" {
+	if dbPath != "" || embURL != "" {
 		return mcp.NewToolResultError(
-			"database path must be specified (through parameters or server configuration)",
+			"Custom database path and embedding URL are not supported in this server instance. " +
+				"Please start server with the desired configuration.",
 		), nil
 	}
 
-	p := tsparser.New()
-	emb := embeddings.NewApi(embURL)
-
-	sym, err := sqlite.New(dbPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("open SQLite failed: %v", err)), nil
+	// Use default search service
+	if srv.searchService == nil {
+		return mcp.NewToolResultError("search service not initialized"), nil
 	}
 
-	vecStore, err := sqlvec.New(dbPath, 0)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("open vector store failed: %v", err)), nil
-	}
-	defer vecStore.Close() //nolint:errcheck
-
-	idx := pipeline.New(p, emb, sym, vecStore, pipeline.Options{})
+	// Index project if specified
 	if project != "" {
-		if err := idx.IndexProject(project); err != nil {
+		if srv.indexer == nil {
+			return mcp.NewToolResultError("indexer not available for project indexing"), nil
+		}
+		if err := srv.indexer.IndexProject(project); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("index project failed: %v", err)), nil
 		}
 	}
 
-	svc := &search.Service{Embedder: emb, Vector: vecStore}
-	hits, err := svc.Search(ctx, query, topK)
+	hits, err := srv.searchService.Search(ctx, query, topK)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -310,59 +202,22 @@ func (srv *Server) handleSymbolSearch(
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	dbPath := req.GetString("db", srv.opts.DB)
 
-	// If using custom DB, create temporary components
-	if dbPath != srv.opts.DB {
-		return srv.handleSymbolSearchWithCustomConfig(name, dbPath)
-	}
-
-	// Use shared components for default config
-	if srv.components == nil {
-		return mcp.NewToolResultError("components not initialized"), nil
-	}
-
-	// Create minimal indexer just for symbol search
-	emb := embeddings.NewLocal(1) // Dummy embedder for symbol search
-	idx := pipeline.New(
-		srv.components.Parser,
-		emb,
-		srv.components.SymStore,
-		srv.components.VecStore,
-		pipeline.Options{},
-	)
-	res, err := idx.SearchSymbol(name)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultStructuredOnly(res), nil
-}
-
-// handleSymbolSearchWithCustomConfig handles symbol search with custom db
-func (srv *Server) handleSymbolSearchWithCustomConfig(
-	name, dbPath string,
-) (*mcp.CallToolResult, error) {
-	if dbPath == "" {
+	// Check for custom config parameters
+	dbPath := req.GetString("db", "")
+	if dbPath != "" {
 		return mcp.NewToolResultError(
-			"database path must be specified (through parameters or server configuration)",
+			"Custom database path is not supported in this server instance. " +
+				"Please start server with the desired database configuration.",
 		), nil
 	}
 
-	p := tsparser.New()
-	emb := embeddings.NewLocal(1)
-	sym, err := sqlite.New(dbPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("open SQLite failed: %v", err)), nil
+	// Use default indexer for symbol search
+	if srv.indexer == nil {
+		return mcp.NewToolResultError("indexer not initialized"), nil
 	}
 
-	vecStore, err := sqlvec.New(dbPath, 0)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("open vector store failed: %v", err)), nil
-	}
-	defer vecStore.Close() //nolint:errcheck
-
-	idx := pipeline.New(p, emb, sym, vecStore, pipeline.Options{})
-	res, err := idx.SearchSymbol(name)
+	res, err := srv.indexer.SearchSymbol(name)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -388,7 +243,7 @@ func (srv *Server) handleLSPAnalyze(
 	ctx context.Context,
 	req mcp.CallToolRequest,
 ) (*mcp.CallToolResult, error) {
-	project := req.GetString("project", srv.opts.Project)
+	project := req.GetString("project", "")
 	if project == "" {
 		return mcp.NewToolResultError(
 			"workspace path must be specified (through parameters or server configuration)",

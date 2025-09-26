@@ -10,7 +10,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	server := New()
+	server := New(nil, nil) // nil services for basic functionality test
 	assert.NotNil(t, server)
 }
 
@@ -75,7 +75,7 @@ func TestLSPAnalyzeTool(t *testing.T) {
 
 func TestHandleSemanticSearchError(t *testing.T) {
 	ctx := context.Background()
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil} // nil components to test error handling
 
 	// test missing required params
 	req := mcp.CallToolRequest{
@@ -102,7 +102,7 @@ func TestHandleSymbolSearchError(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleSymbolSearch(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
@@ -120,7 +120,7 @@ func TestHandleLSPAnalyzeError(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleLSPAnalyze(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
@@ -138,7 +138,7 @@ func TestHandleLSPCompletionError(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleLSPCompletion(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
@@ -156,7 +156,7 @@ func TestHandleLSPSymbolsError(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleLSPSymbols(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
@@ -173,7 +173,7 @@ func TestHandleLSPInfo(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleLSPInfo(ctx, req)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -195,7 +195,7 @@ func TestHandleLSPList(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleLSPList(ctx, req)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -216,7 +216,7 @@ func TestHandleLSPHealth(t *testing.T) {
 		},
 	}
 
-	srv := &Server{opts: ServerOptions{}}
+	srv := &Server{searchService: nil, indexer: nil}
 	result, err := srv.handleLSPHealth(ctx, req)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/0x5457/ts-index/internal/constants"
 	"github.com/0x5457/ts-index/internal/factory"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,7 @@ func NewIndexCommand() *cobra.Command {
 			}()
 
 			// Create indexer
-			idx := componentFactory.CreateIndexer(components)
+			idx := componentFactory.CreateIndexerFromComponents(components)
 
 			// Run indexing with progress
 			progCh, errCh := idx.IndexProjectProgress(cmd.Context(), project)
@@ -80,7 +81,7 @@ func NewIndexCommand() *cobra.Command {
 		},
 	}
 
-	defaultEmbUrl := "http://localhost:8000/embed"
+	defaultEmbUrl := constants.DefaultEmbedURL
 	defaultDbPath := filepath.Join(os.TempDir(), "ts_index.db")
 
 	cmd.Flags().StringVar(&project, "project", "", "Path to project root")
