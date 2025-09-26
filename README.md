@@ -79,6 +79,9 @@ make lint
 
 # Run linter with auto-fix
 make lint-fix
+
+# Run test
+make test
 ```
 
 ### Building
