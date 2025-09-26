@@ -10,31 +10,31 @@ import (
 type LspAdapter interface {
 	// Name returns the name of this language server
 	Name() string
-	
+
 	// LanguageIds returns a mapping of language names to LSP language identifiers
 	LanguageIds() map[string]string
-	
+
 	// ServerCommand returns the command and arguments to start the language server
 	ServerCommand(workspaceRoot string) (string, []string, error)
-	
+
 	// InitializationOptions returns options to send during LSP initialization
 	InitializationOptions(workspaceRoot string) (map[string]interface{}, error)
-	
+
 	// WorkspaceConfiguration returns workspace-specific configuration
 	WorkspaceConfiguration(workspaceRoot string) (map[string]interface{}, error)
-	
+
 	// ProcessDiagnostics allows the adapter to modify diagnostics before they're used
 	ProcessDiagnostics(diagnostics []Diagnostic) []Diagnostic
-	
+
 	// ProcessCompletions allows the adapter to modify completion items
 	ProcessCompletions(items []CompletionItem) []CompletionItem
-	
+
 	// CanInstall returns true if this adapter can install its language server
 	CanInstall() bool
-	
+
 	// Install installs the language server for this adapter
 	Install(ctx context.Context) error
-	
+
 	// IsInstalled checks if the language server is already installed
 	IsInstalled() bool
 }
@@ -50,13 +50,13 @@ type LanguageServerBinary struct {
 type LanguageServerDelegate interface {
 	// ReadTextFile reads a text file from the workspace
 	ReadTextFile(path string) (string, error)
-	
+
 	// Which finds an executable in PATH
 	Which(command string) (string, error)
-	
+
 	// ShellEnv returns the shell environment
 	ShellEnv() map[string]string
-	
+
 	// WorkspaceRoot returns the workspace root path
 	WorkspaceRoot() string
 }
@@ -71,7 +71,11 @@ type LanguageServer struct {
 }
 
 // NewLanguageServer creates a new language server instance
-func NewLanguageServer(adapter LspAdapter, delegate LanguageServerDelegate, rootPath string) *LanguageServer {
+func NewLanguageServer(
+	adapter LspAdapter,
+	delegate LanguageServerDelegate,
+	rootPath string,
+) *LanguageServer {
 	return &LanguageServer{
 		adapter:    adapter,
 		delegate:   delegate,
@@ -87,13 +91,13 @@ func (ls *LanguageServer) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Get configuration from adapter
 	initOptions, err := ls.adapter.InitializationOptions(ls.rootPath)
 	if err != nil {
 		return err
 	}
-	
+
 	// Create LSP client configuration
 	config := LanguageServerConfig{
 		Command:               command,
@@ -102,7 +106,7 @@ func (ls *LanguageServer) Start(ctx context.Context) error {
 		InitializationOptions: initOptions,
 		Env:                   ls.delegate.ShellEnv(),
 	}
-	
+
 	// Create and start client
 	ls.client = NewLSPClient(config)
 	return ls.client.Start(ctx, ls.rootPath)
@@ -122,87 +126,110 @@ func (ls *LanguageServer) IsRunning() bool {
 }
 
 // Hover provides hover information
-func (ls *LanguageServer) Hover(ctx context.Context, uri string, position Position) (*Hover, error) {
+func (ls *LanguageServer) Hover(
+	ctx context.Context,
+	uri string,
+	position Position,
+) (*Hover, error) {
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	params := TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 		Position:     position,
 	}
-	
+
 	return ls.client.Hover(ctx, params)
 }
 
 // Completion provides code completion
-func (ls *LanguageServer) Completion(ctx context.Context, uri string, position Position) (*CompletionList, error) {
+func (ls *LanguageServer) Completion(
+	ctx context.Context,
+	uri string,
+	position Position,
+) (*CompletionList, error) {
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	params := TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 		Position:     position,
 	}
-	
+
 	result, err := ls.client.Completion(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Process completions through adapter
 	if result != nil {
 		result.Items = ls.adapter.ProcessCompletions(result.Items)
 	}
-	
+
 	return result, nil
 }
 
 // GotoDefinition finds symbol definitions
-func (ls *LanguageServer) GotoDefinition(ctx context.Context, uri string, position Position) ([]Location, error) {
+func (ls *LanguageServer) GotoDefinition(
+	ctx context.Context,
+	uri string,
+	position Position,
+) ([]Location, error) {
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	params := TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 		Position:     position,
 	}
-	
+
 	return ls.client.GotoDefinition(ctx, params)
 }
 
 // FindReferences finds symbol references
-func (ls *LanguageServer) FindReferences(ctx context.Context, uri string, position Position, includeDeclaration bool) ([]Location, error) {
+func (ls *LanguageServer) FindReferences(
+	ctx context.Context,
+	uri string,
+	position Position,
+	includeDeclaration bool,
+) ([]Location, error) {
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	params := TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 		Position:     position,
 	}
-	
+
 	return ls.client.FindReferences(ctx, params)
 }
 
 // WorkspaceSymbols searches for symbols in the workspace
-func (ls *LanguageServer) WorkspaceSymbols(ctx context.Context, query string) ([]SymbolInformation, error) {
+func (ls *LanguageServer) WorkspaceSymbols(
+	ctx context.Context,
+	query string,
+) ([]SymbolInformation, error) {
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	params := WorkspaceSymbolParams{Query: query}
 	return ls.client.WorkspaceSymbols(ctx, params)
 }
 
 // DocumentSymbols gets symbols for a document
-func (ls *LanguageServer) DocumentSymbols(ctx context.Context, uri string) ([]SymbolInformation, error) {
+func (ls *LanguageServer) DocumentSymbols(
+	ctx context.Context,
+	uri string,
+) ([]SymbolInformation, error) {
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	return ls.client.DocumentSymbols(ctx, uri)
 }
 
@@ -211,7 +238,7 @@ func (ls *LanguageServer) DidOpen(ctx context.Context, uri string, content strin
 	if ls.client == nil {
 		return ErrServerNotRunning
 	}
-	
+
 	return ls.client.DidOpen(ctx, uri, content)
 }
 
@@ -220,7 +247,7 @@ func (ls *LanguageServer) DidChange(ctx context.Context, uri string, content str
 	if ls.client == nil {
 		return ErrServerNotRunning
 	}
-	
+
 	return ls.client.DidChange(ctx, uri, content)
 }
 
@@ -229,7 +256,7 @@ func (ls *LanguageServer) DidClose(ctx context.Context, uri string) error {
 	if ls.client == nil {
 		return ErrServerNotRunning
 	}
-	
+
 	return ls.client.DidClose(ctx, uri)
 }
 
@@ -238,12 +265,12 @@ func (ls *LanguageServer) GetDiagnostics(ctx context.Context, uri string) ([]Dia
 	if ls.client == nil {
 		return nil, ErrServerNotRunning
 	}
-	
+
 	diagnostics, err := ls.client.GetDiagnostics(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Process diagnostics through adapter
 	return ls.adapter.ProcessDiagnostics(diagnostics), nil
 }

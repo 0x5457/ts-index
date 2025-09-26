@@ -126,8 +126,8 @@ type LSPDiagnostic struct {
 // EnhancedSymbol extends Symbol with LSP information
 type EnhancedSymbol struct {
 	Symbol
-	LSPHover       *LSPHoverInfo     `json:"lsp_hover,omitempty"`
-	LSPDefinitions []LSPLocation     `json:"lsp_definitions,omitempty"`
-	LSPReferences  []LSPLocation     `json:"lsp_references,omitempty"`
-	LSPDiagnostics []LSPDiagnostic   `json:"lsp_diagnostics,omitempty"`
+	LSPHover       *LSPHoverInfo   `json:"lsp_hover,omitempty"`
+	LSPDefinitions []LSPLocation   `json:"lsp_definitions,omitempty"`
+	LSPReferences  []LSPLocation   `json:"lsp_references,omitempty"`
+	LSPDiagnostics []LSPDiagnostic `json:"lsp_diagnostics,omitempty"`
 }

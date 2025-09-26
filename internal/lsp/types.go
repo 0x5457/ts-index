@@ -41,12 +41,12 @@ type Hover struct {
 
 // CompletionItem represents a completion item
 type CompletionItem struct {
-	Label         string           `json:"label"`
-	Kind          *CompletionKind  `json:"kind,omitempty"`
-	Detail        *string          `json:"detail,omitempty"`
-	Documentation json.RawMessage  `json:"documentation,omitempty"`
-	InsertText    *string          `json:"insertText,omitempty"`
-	TextEdit      *TextEdit        `json:"textEdit,omitempty"`
+	Label         string          `json:"label"`
+	Kind          *CompletionKind `json:"kind,omitempty"`
+	Detail        *string         `json:"detail,omitempty"`
+	Documentation json.RawMessage `json:"documentation,omitempty"`
+	InsertText    *string         `json:"insertText,omitempty"`
+	TextEdit      *TextEdit       `json:"textEdit,omitempty"`
 }
 
 // CompletionKind represents the kind of a completion item
@@ -94,11 +94,11 @@ type CompletionList struct {
 
 // Diagnostic represents a diagnostic, such as a compiler error or warning
 type Diagnostic struct {
-	Range    Range              `json:"range"`
+	Range    Range               `json:"range"`
 	Severity *DiagnosticSeverity `json:"severity,omitempty"`
-	Code     json.RawMessage    `json:"code,omitempty"`
-	Source   *string            `json:"source,omitempty"`
-	Message  string             `json:"message"`
+	Code     json.RawMessage     `json:"code,omitempty"`
+	Source   *string             `json:"source,omitempty"`
+	Message  string              `json:"message"`
 }
 
 // DiagnosticSeverity represents the severity of a diagnostic
@@ -113,11 +113,11 @@ const (
 
 // SymbolInformation represents information about programming constructs like variables, classes, interfaces etc.
 type SymbolInformation struct {
-	Name          string       `json:"name"`
-	Kind          SymbolKind   `json:"kind"`
-	Deprecated    *bool        `json:"deprecated,omitempty"`
-	Location      Location     `json:"location"`
-	ContainerName *string      `json:"containerName,omitempty"`
+	Name          string     `json:"name"`
+	Kind          SymbolKind `json:"kind"`
+	Deprecated    *bool      `json:"deprecated,omitempty"`
+	Location      Location   `json:"location"`
+	ContainerName *string    `json:"containerName,omitempty"`
 }
 
 // SymbolKind represents the kind of a symbol

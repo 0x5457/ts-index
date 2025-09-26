@@ -26,13 +26,13 @@ func NewLanguageServerManager(delegate LanguageServerDelegate) *LanguageServerMa
 		servers:  make(map[string]*LanguageServer),
 		delegate: delegate,
 	}
-	
+
 	// Register built-in adapters
 	manager.RegisterAdapter("typescript", NewTypeScriptLspAdapter())
 	manager.RegisterAdapter("javascript", NewTypeScriptLspAdapter())
 	manager.RegisterAdapter("typescriptreact", NewTypeScriptLspAdapter())
 	manager.RegisterAdapter("javascriptreact", NewTypeScriptLspAdapter())
-	
+
 	return manager
 }
 
@@ -44,69 +44,76 @@ func (m *LanguageServerManager) RegisterAdapter(language string, adapter LspAdap
 }
 
 // GetLanguageServer gets or creates a language server for the given workspace and language
-func (m *LanguageServerManager) GetLanguageServer(ctx context.Context, workspaceRoot, language string) (*LanguageServer, error) {
+func (m *LanguageServerManager) GetLanguageServer(
+	ctx context.Context,
+	workspaceRoot, language string,
+) (*LanguageServer, error) {
 	key := m.serverKey(workspaceRoot, language)
-	
+
 	m.mu.RLock()
 	if server, exists := m.servers[key]; exists && server.IsRunning() {
 		m.mu.RUnlock()
 		return server, nil
 	}
 	m.mu.RUnlock()
-	
+
 	// Need to create a new server
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Double-check after acquiring write lock
 	if server, exists := m.servers[key]; exists && server.IsRunning() {
 		return server, nil
 	}
-	
+
 	// Get adapter for this language
 	adapter, exists := m.adapters[language]
 	if !exists {
 		return nil, fmt.Errorf("no adapter registered for language: %s", language)
 	}
-	
+
 	// Check if the adapter's language server is installed
 	if !adapter.IsInstalled() {
-		return nil, fmt.Errorf("language server for %s is not installed. Adapter: %s", language, adapter.Name())
+		return nil, fmt.Errorf(
+			"language server for %s is not installed. Adapter: %s",
+			language,
+			adapter.Name(),
+		)
 	}
-	
+
 	// Create absolute workspace path
 	absWorkspace, err := filepath.Abs(workspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute workspace path: %w", err)
 	}
-	
+
 	// Create new language server
 	server := NewLanguageServer(adapter, m.delegate, absWorkspace)
-	
+
 	// Start the server
 	if err := server.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start language server: %w", err)
 	}
-	
+
 	// Store the server
 	m.servers[key] = server
-	
+
 	return server, nil
 }
 
 // StopLanguageServer stops a language server for a specific workspace and language
 func (m *LanguageServerManager) StopLanguageServer(workspaceRoot, language string) error {
 	key := m.serverKey(workspaceRoot, language)
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if server, exists := m.servers[key]; exists {
 		err := server.Stop()
 		delete(m.servers, key)
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -116,10 +123,10 @@ func (m *LanguageServerManager) StopWorkspaceServers(workspaceRoot string) error
 	if err != nil {
 		return err
 	}
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	var lastErr error
 	for key, server := range m.servers {
 		if m.matchesWorkspace(key, absWorkspace) {
@@ -129,7 +136,7 @@ func (m *LanguageServerManager) StopWorkspaceServers(workspaceRoot string) error
 			delete(m.servers, key)
 		}
 	}
-	
+
 	return lastErr
 }
 
@@ -137,7 +144,7 @@ func (m *LanguageServerManager) StopWorkspaceServers(workspaceRoot string) error
 func (m *LanguageServerManager) StopAllServers() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	var lastErr error
 	for key, server := range m.servers {
 		if err := server.Stop(); err != nil {
@@ -145,7 +152,7 @@ func (m *LanguageServerManager) StopAllServers() error {
 		}
 		delete(m.servers, key)
 	}
-	
+
 	return lastErr
 }
 
@@ -153,7 +160,7 @@ func (m *LanguageServerManager) StopAllServers() error {
 func (m *LanguageServerManager) GetRunningServers() []ServerInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	var servers []ServerInfo
 	for key, server := range m.servers {
 		if server.IsRunning() {
@@ -165,7 +172,7 @@ func (m *LanguageServerManager) GetRunningServers() []ServerInfo {
 			})
 		}
 	}
-	
+
 	return servers
 }
 
@@ -173,7 +180,7 @@ func (m *LanguageServerManager) GetRunningServers() []ServerInfo {
 func (m *LanguageServerManager) GetRegisteredAdapters() []AdapterInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	var adapters []AdapterInfo
 	for language, adapter := range m.adapters {
 		adapters = append(adapters, AdapterInfo{
@@ -183,7 +190,7 @@ func (m *LanguageServerManager) GetRegisteredAdapters() []AdapterInfo {
 			CanInstall:  adapter.CanInstall(),
 		})
 	}
-	
+
 	return adapters
 }
 
@@ -192,15 +199,15 @@ func (m *LanguageServerManager) InstallLanguageServer(ctx context.Context, langu
 	m.mu.RLock()
 	adapter, exists := m.adapters[language]
 	m.mu.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("no adapter registered for language: %s", language)
 	}
-	
+
 	if !adapter.CanInstall() {
 		return fmt.Errorf("adapter for %s cannot install language server", language)
 	}
-	
+
 	return adapter.Install(ctx)
 }
 
@@ -251,7 +258,7 @@ func (d *DefaultDelegate) ReadTextFile(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(d.workspaceRoot, path)
 	}
-	
+
 	content, err := readFileContent(path)
 	return content, err
 }

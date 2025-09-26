@@ -48,7 +48,7 @@ func NewTypeScriptLspAdapter() *TypeScriptLspAdapter {
 	adapter := &TypeScriptLspAdapter{
 		installationManager: NewInstallationManager(""),
 	}
-	
+
 	// Determine which server to use
 	if IsVTSLSInstalled() {
 		adapter.serverType = ServerTypeVTSLS
@@ -58,7 +58,7 @@ func NewTypeScriptLspAdapter() *TypeScriptLspAdapter {
 		// Default to vtsls, installation will be handled separately
 		adapter.serverType = ServerTypeVTSLS
 	}
-	
+
 	return adapter
 }
 
@@ -68,7 +68,7 @@ func NewTypeScriptLspAdapterWithInstallDir(installDir string) *TypeScriptLspAdap
 		installationManager: NewInstallationManager(installDir),
 		serverType:          ServerTypeVTSLS, // Default to vtsls
 	}
-	
+
 	return adapter
 }
 
@@ -87,48 +87,57 @@ func (a *TypeScriptLspAdapter) Name() string {
 // LanguageIds implements LspAdapter.LanguageIds
 func (a *TypeScriptLspAdapter) LanguageIds() map[string]string {
 	return map[string]string{
-		"typescript":       "typescript",
-		"javascript":       "javascript", 
-		"typescriptreact":  "typescriptreact",
-		"javascriptreact":  "javascriptreact",
-		"tsx":              "typescriptreact",
-		"jsx":              "javascriptreact",
-		"ts":               "typescript",
-		"js":               "javascript",
+		"typescript":      "typescript",
+		"javascript":      "javascript",
+		"typescriptreact": "typescriptreact",
+		"javascriptreact": "javascriptreact",
+		"tsx":             "typescriptreact",
+		"jsx":             "javascriptreact",
+		"ts":              "typescript",
+		"js":              "javascript",
 	}
 }
 
 // ServerCommand implements LspAdapter.ServerCommand
 func (a *TypeScriptLspAdapter) ServerCommand(workspaceRoot string) (string, []string, error) {
 	delegate := NewDefaultDelegate(workspaceRoot)
-	
+
 	// First try to get from local installation
 	serverName := a.Name()
-	if binary, err := a.installationManager.GetServerBinary(serverName, "", delegate); err == nil && binary != nil {
+	if binary, err := a.installationManager.GetServerBinary(serverName, "", delegate); err == nil &&
+		binary != nil {
 		return binary.Path, binary.Args, nil
 	}
-	
+
 	// Fallback to system-wide installation
 	switch a.serverType {
 	case ServerTypeVTSLS:
 		if IsVTSLSInstalled() {
 			return "vtsls", []string{"--stdio"}, nil
 		}
-		return "", nil, fmt.Errorf("vtsls is not installed. Use 'ts-index lsp install vtsls' or install globally with: %s", InstallVTSLSCommand())
-		
+		return "", nil, fmt.Errorf(
+			"vtsls is not installed. Use 'ts-index lsp install vtsls' or install globally with: %s",
+			InstallVTSLSCommand(),
+		)
+
 	case ServerTypeTypeScriptLanguageServer:
 		if IsTypeScriptLanguageServerInstalled() {
 			return "typescript-language-server", []string{"--stdio"}, nil
 		}
-		return "", nil, fmt.Errorf("typescript-language-server is not installed. Use 'ts-index lsp install typescript-language-server' or install globally with: %s", InstallTypeScriptLanguageServerCommand())
-		
+		return "", nil, fmt.Errorf(
+			"typescript-language-server is not installed. Use 'ts-index lsp install typescript-language-server' or install globally with: %s",
+			InstallTypeScriptLanguageServerCommand(),
+		)
+
 	default:
 		return "", nil, fmt.Errorf("unknown server type")
 	}
 }
 
 // InitializationOptions implements LspAdapter.InitializationOptions
-func (a *TypeScriptLspAdapter) InitializationOptions(workspaceRoot string) (map[string]interface{}, error) {
+func (a *TypeScriptLspAdapter) InitializationOptions(
+	workspaceRoot string,
+) (map[string]interface{}, error) {
 	switch a.serverType {
 	case ServerTypeVTSLS:
 		return map[string]interface{}{
@@ -154,7 +163,7 @@ func (a *TypeScriptLspAdapter) InitializationOptions(workspaceRoot string) (map[
 				},
 			},
 		}, nil
-		
+
 	case ServerTypeTypeScriptLanguageServer:
 		return map[string]interface{}{
 			"preferences": map[string]interface{}{
@@ -162,14 +171,16 @@ func (a *TypeScriptLspAdapter) InitializationOptions(workspaceRoot string) (map[
 				"includeCompletionsWithInsertText":   true,
 			},
 		}, nil
-		
+
 	default:
 		return nil, nil
 	}
 }
 
 // WorkspaceConfiguration implements LspAdapter.WorkspaceConfiguration
-func (a *TypeScriptLspAdapter) WorkspaceConfiguration(workspaceRoot string) (map[string]interface{}, error) {
+func (a *TypeScriptLspAdapter) WorkspaceConfiguration(
+	workspaceRoot string,
+) (map[string]interface{}, error) {
 	// Check for tsconfig.json
 	tsconfigPath := filepath.Join(workspaceRoot, "tsconfig.json")
 	if _, err := os.Stat(tsconfigPath); err == nil {
@@ -182,7 +193,7 @@ func (a *TypeScriptLspAdapter) WorkspaceConfiguration(workspaceRoot string) (map
 			},
 		}, nil
 	}
-	
+
 	// Default JavaScript configuration
 	return map[string]interface{}{
 		"javascript": map[string]interface{}{
@@ -197,14 +208,14 @@ func (a *TypeScriptLspAdapter) WorkspaceConfiguration(workspaceRoot string) (map
 func (a *TypeScriptLspAdapter) ProcessDiagnostics(diagnostics []Diagnostic) []Diagnostic {
 	// Filter out certain diagnostics or modify them
 	var filtered []Diagnostic
-	
+
 	for _, diag := range diagnostics {
 		// Skip unnecessary diagnostics for certain cases
 		if shouldIncludeDiagnostic(diag) {
 			filtered = append(filtered, diag)
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -215,7 +226,7 @@ func (a *TypeScriptLspAdapter) ProcessCompletions(items []CompletionItem) []Comp
 		// Add additional information or modify existing items
 		a.enhanceCompletionItem(&items[i])
 	}
-	
+
 	return items
 }
 
@@ -231,10 +242,10 @@ func (a *TypeScriptLspAdapter) Install(ctx context.Context) error {
 	if !a.CanInstall() {
 		return fmt.Errorf("npm is not available for installation")
 	}
-	
+
 	delegate := &SimpleDelegate{}
 	serverName := a.Name()
-	
+
 	// Install to local directory
 	_, err := a.installationManager.InstallServer(ctx, serverName, "", delegate)
 	return err
@@ -245,10 +256,10 @@ func (a *TypeScriptLspAdapter) InstallVersion(ctx context.Context, version strin
 	if !a.CanInstall() {
 		return fmt.Errorf("npm is not available for installation")
 	}
-	
+
 	delegate := &SimpleDelegate{}
 	serverName := a.Name()
-	
+
 	// Install specific version to local directory
 	_, err := a.installationManager.InstallServer(ctx, serverName, version, delegate)
 	return err
@@ -258,12 +269,13 @@ func (a *TypeScriptLspAdapter) InstallVersion(ctx context.Context, version strin
 func (a *TypeScriptLspAdapter) IsInstalled() bool {
 	delegate := &SimpleDelegate{}
 	serverName := a.Name()
-	
+
 	// Check local installation first
-	if binary, err := a.installationManager.GetServerBinary(serverName, "", delegate); err == nil && binary != nil {
+	if binary, err := a.installationManager.GetServerBinary(serverName, "", delegate); err == nil &&
+		binary != nil {
 		return true
 	}
-	
+
 	// Check system-wide installation
 	switch a.serverType {
 	case ServerTypeVTSLS:
@@ -292,7 +304,7 @@ func shouldIncludeDiagnostic(diag Diagnostic) bool {
 func (a *TypeScriptLspAdapter) enhanceCompletionItem(item *CompletionItem) {
 	// Add custom enhancements to completion items
 	// For example, improve documentation or add custom sorting
-	
+
 	// Enhance detail information
 	if item.Detail == nil || *item.Detail == "" {
 		if item.Kind != nil {

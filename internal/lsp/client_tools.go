@@ -21,7 +21,7 @@ func NewClientTools() *ClientTools {
 	// Create a simple delegate for basic functionality
 	delegate := &SimpleDelegate{}
 	manager := NewLanguageServerManager(delegate)
-	
+
 	return &ClientTools{
 		manager: manager,
 	}
@@ -29,13 +29,13 @@ func NewClientTools() *ClientTools {
 
 // AnalyzeSymbolRequest represents a request to analyze a symbol
 type AnalyzeSymbolRequest struct {
-	WorkspaceRoot   string `json:"workspace_root"`
-	FilePath        string `json:"file_path"`
-	Line            int    `json:"line"`      // 0-based
-	Character       int    `json:"character"` // 0-based
-	IncludeHover    bool   `json:"include_hover"`
-	IncludeRefs     bool   `json:"include_refs"`
-	IncludeDefs     bool   `json:"include_defs"`
+	WorkspaceRoot string `json:"workspace_root"`
+	FilePath      string `json:"file_path"`
+	Line          int    `json:"line"`      // 0-based
+	Character     int    `json:"character"` // 0-based
+	IncludeHover  bool   `json:"include_hover"`
+	IncludeRefs   bool   `json:"include_refs"`
+	IncludeDefs   bool   `json:"include_defs"`
 }
 
 // AnalyzeSymbolResponse represents the response of symbol analysis
@@ -103,36 +103,39 @@ type SymbolResult struct {
 }
 
 // AnalyzeSymbol analyzes a symbol at a specific position
-func (ct *ClientTools) AnalyzeSymbol(ctx context.Context, req AnalyzeSymbolRequest) AnalyzeSymbolResponse {
+func (ct *ClientTools) AnalyzeSymbol(
+	ctx context.Context,
+	req AnalyzeSymbolRequest,
+) AnalyzeSymbolResponse {
 	// Determine language from file extension
 	language := getLanguageFromPath(req.FilePath)
 	if language == "" {
 		return AnalyzeSymbolResponse{Error: "unsupported file type"}
 	}
-	
+
 	// Get or create language server
 	server, err := ct.manager.GetLanguageServer(ctx, req.WorkspaceRoot, language)
 	if err != nil {
 		return AnalyzeSymbolResponse{Error: fmt.Sprintf("failed to get language server: %v", err)}
 	}
-	
+
 	// Make file path absolute
 	absFilePath := req.FilePath
 	if !filepath.IsAbs(absFilePath) {
 		absRoot, _ := filepath.Abs(req.WorkspaceRoot)
 		absFilePath = filepath.Join(absRoot, req.FilePath)
 	}
-	
+
 	uri := PathToURI(absFilePath)
 	position := Position{Line: req.Line, Character: req.Character}
-	
+
 	// Ensure document is open
 	if err := ct.ensureDocumentOpen(ctx, server, uri, absFilePath); err != nil {
 		return AnalyzeSymbolResponse{Error: fmt.Sprintf("failed to open document: %v", err)}
 	}
-	
+
 	var response AnalyzeSymbolResponse
-	
+
 	// Get hover information if requested
 	if req.IncludeHover {
 		hover, err := server.Hover(ctx, uri, position)
@@ -147,7 +150,7 @@ func (ct *ClientTools) AnalyzeSymbol(ctx context.Context, req AnalyzeSymbolReque
 			}
 		}
 	}
-	
+
 	// Get definitions if requested
 	if req.IncludeDefs {
 		definitions, err := server.GotoDefinition(ctx, uri, position)
@@ -157,7 +160,7 @@ func (ct *ClientTools) AnalyzeSymbol(ctx context.Context, req AnalyzeSymbolReque
 		}
 		response.Definitions = convertLocationsToResults(definitions)
 	}
-	
+
 	// Get references if requested
 	if req.IncludeRefs {
 		references, err := server.FindReferences(ctx, uri, position, true)
@@ -167,55 +170,58 @@ func (ct *ClientTools) AnalyzeSymbol(ctx context.Context, req AnalyzeSymbolReque
 		}
 		response.References = convertLocationsToResults(references)
 	}
-	
+
 	return response
 }
 
 // GetCompletion gets completion items at a specific position
-func (ct *ClientTools) GetCompletion(ctx context.Context, req CompletionRequest) CompletionResponse {
+func (ct *ClientTools) GetCompletion(
+	ctx context.Context,
+	req CompletionRequest,
+) CompletionResponse {
 	// Determine language from file extension
 	language := getLanguageFromPath(req.FilePath)
 	if language == "" {
 		return CompletionResponse{Error: "unsupported file type"}
 	}
-	
+
 	// Get or create language server
 	server, err := ct.manager.GetLanguageServer(ctx, req.WorkspaceRoot, language)
 	if err != nil {
 		return CompletionResponse{Error: fmt.Sprintf("failed to get language server: %v", err)}
 	}
-	
+
 	// Make file path absolute
 	absFilePath := req.FilePath
 	if !filepath.IsAbs(absFilePath) {
 		absRoot, _ := filepath.Abs(req.WorkspaceRoot)
 		absFilePath = filepath.Join(absRoot, req.FilePath)
 	}
-	
+
 	uri := PathToURI(absFilePath)
 	position := Position{Line: req.Line, Character: req.Character}
-	
+
 	// Ensure document is open
 	if err := ct.ensureDocumentOpen(ctx, server, uri, absFilePath); err != nil {
 		return CompletionResponse{Error: fmt.Sprintf("failed to open document: %v", err)}
 	}
-	
+
 	// Set default max results
 	if req.MaxResults <= 0 {
 		req.MaxResults = 20
 	}
-	
+
 	completion, err := server.Completion(ctx, uri, position)
 	if err != nil {
 		return CompletionResponse{Error: fmt.Sprintf("failed to get completion: %v", err)}
 	}
-	
+
 	items := make([]CompletionItemResult, 0, len(completion.Items))
 	for i, item := range completion.Items {
 		if i >= req.MaxResults {
 			break
 		}
-		
+
 		items = append(items, CompletionItemResult{
 			Label:      item.Label,
 			Kind:       int(*item.Kind),
@@ -223,37 +229,40 @@ func (ct *ClientTools) GetCompletion(ctx context.Context, req CompletionRequest)
 			InsertText: getStringValue(item.InsertText),
 		})
 	}
-	
+
 	return CompletionResponse{Items: items}
 }
 
 // SearchSymbols searches for symbols in the workspace
-func (ct *ClientTools) SearchSymbols(ctx context.Context, req SymbolSearchRequest) SymbolSearchResponse {
+func (ct *ClientTools) SearchSymbols(
+	ctx context.Context,
+	req SymbolSearchRequest,
+) SymbolSearchResponse {
 	// Try TypeScript first (most common case)
 	language := "typescript"
-	
+
 	// Get or create language server
 	server, err := ct.manager.GetLanguageServer(ctx, req.WorkspaceRoot, language)
 	if err != nil {
 		return SymbolSearchResponse{Error: fmt.Sprintf("failed to get language server: %v", err)}
 	}
-	
+
 	// Set default max results
 	if req.MaxResults <= 0 {
 		req.MaxResults = 50
 	}
-	
+
 	symbols, err := server.WorkspaceSymbols(ctx, req.Query)
 	if err != nil {
 		return SymbolSearchResponse{Error: fmt.Sprintf("failed to search symbols: %v", err)}
 	}
-	
+
 	result := make([]SymbolResult, 0, len(symbols))
 	for i, symbol := range symbols {
 		if i >= req.MaxResults {
 			break
 		}
-		
+
 		result = append(result, SymbolResult{
 			Name: symbol.Name,
 			Kind: int(symbol.Kind),
@@ -264,43 +273,46 @@ func (ct *ClientTools) SearchSymbols(ctx context.Context, req SymbolSearchReques
 			ContainerName: getStringValue(symbol.ContainerName),
 		})
 	}
-	
+
 	return SymbolSearchResponse{Symbols: result}
 }
 
 // GetDocumentSymbols gets symbols for a specific document
-func (ct *ClientTools) GetDocumentSymbols(ctx context.Context, workspaceRoot, filePath string) ([]SymbolResult, error) {
+func (ct *ClientTools) GetDocumentSymbols(
+	ctx context.Context,
+	workspaceRoot, filePath string,
+) ([]SymbolResult, error) {
 	// Determine language from file extension
 	language := getLanguageFromPath(filePath)
 	if language == "" {
 		return nil, fmt.Errorf("unsupported file type")
 	}
-	
+
 	// Get or create language server
 	server, err := ct.manager.GetLanguageServer(ctx, workspaceRoot, language)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get language server: %v", err)
 	}
-	
+
 	// Make file path absolute
 	absFilePath := filePath
 	if !filepath.IsAbs(absFilePath) {
 		absRoot, _ := filepath.Abs(workspaceRoot)
 		absFilePath = filepath.Join(absRoot, filePath)
 	}
-	
+
 	uri := PathToURI(absFilePath)
-	
+
 	// Ensure document is open
 	if err := ct.ensureDocumentOpen(ctx, server, uri, absFilePath); err != nil {
 		return nil, fmt.Errorf("failed to open document: %v", err)
 	}
-	
+
 	symbols, err := server.DocumentSymbols(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make([]SymbolResult, len(symbols))
 	for i, symbol := range symbols {
 		result[i] = SymbolResult{
@@ -313,7 +325,7 @@ func (ct *ClientTools) GetDocumentSymbols(ctx context.Context, workspaceRoot, fi
 			ContainerName: getStringValue(symbol.ContainerName),
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -334,13 +346,17 @@ func (ct *ClientTools) GetAdapterInfo() []AdapterInfo {
 
 // Helper functions
 
-func (ct *ClientTools) ensureDocumentOpen(ctx context.Context, server *LanguageServer, uri, filePath string) error {
+func (ct *ClientTools) ensureDocumentOpen(
+	ctx context.Context,
+	server *LanguageServer,
+	uri, filePath string,
+) error {
 	// Read file content
 	content, err := readFileContent(filePath)
 	if err != nil {
 		return err
 	}
-	
+
 	// Open document
 	return server.DidOpen(ctx, uri, content)
 }
@@ -364,10 +380,7 @@ func getLanguageFromPath(filePath string) string {
 func convertLocationsToResults(locations []Location) []LocationResult {
 	result := make([]LocationResult, len(locations))
 	for i, loc := range locations {
-		result[i] = LocationResult{
-			URI:   loc.URI,
-			Range: loc.Range,
-		}
+		result[i] = LocationResult(loc)
 	}
 	return result
 }
