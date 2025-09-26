@@ -5,3 +5,4 @@ docs/api/
 *.db
 .env
 .temp/
+ts-index
