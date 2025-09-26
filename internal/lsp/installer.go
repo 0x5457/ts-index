@@ -319,29 +319,32 @@ func (i *TypeScriptLspInstaller) installToDirectory(
 	installDir string,
 	version string,
 ) error {
-    var packages []string
+	var packages []string
 	switch i.serverType {
 	case ServerTypeVTSLS:
-        if version != "" {
-            packages = []string{fmt.Sprintf("@vtsls/language-server@%s", version)}
-        } else {
-            packages = []string{"@vtsls/language-server"}
-        }
+		if version != "" {
+			packages = []string{fmt.Sprintf("@vtsls/language-server@%s", version)}
+		} else {
+			packages = []string{"@vtsls/language-server"}
+		}
 	case ServerTypeTypeScriptLanguageServer:
-        if version != "" {
-            packages = []string{fmt.Sprintf("%s@%s", typescriptLanguageServerName, version), "typescript"}
-        } else {
-            packages = []string{typescriptLanguageServerName, "typescript"}
-        }
+		if version != "" {
+			packages = []string{
+				fmt.Sprintf("%s@%s", typescriptLanguageServerName, version),
+				"typescript",
+			}
+		} else {
+			packages = []string{typescriptLanguageServerName, "typescript"}
+		}
 	default:
 		return fmt.Errorf("unsupported server type")
 	}
 
 	// Install package to specific directory
-    args := []string{"install"}
-    args = append(args, packages...)
-    args = append(args, "--prefix", ".")
-    cmd := exec.CommandContext(ctx, "npm", args...)
+	args := []string{"install"}
+	args = append(args, packages...)
+	args = append(args, "--prefix", ".")
+	cmd := exec.CommandContext(ctx, "npm", args...)
 	cmd.Dir = installDir
 
 	output, err := cmd.CombinedOutput()

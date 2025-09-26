@@ -1,12 +1,12 @@
 package commands
 
 import (
-    "encoding/json"
-    "fmt"
+	"encoding/json"
+	"fmt"
 
-    mcpclient "github.com/0x5457/ts-index/internal/mcp"
-    "github.com/0x5457/ts-index/internal/lsp"
-    "github.com/spf13/cobra"
+	"github.com/0x5457/ts-index/internal/lsp"
+	mcpclient "github.com/0x5457/ts-index/internal/mcp"
+	"github.com/spf13/cobra"
 )
 
 func NewLSPCommand() *cobra.Command {
@@ -33,14 +33,18 @@ func newLSPInfoCommand() *cobra.Command {
 		Use:   "info",
 		Short: "Show LSP server information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
-            if err != nil { return err }
-            defer func() { _ = cli.Close() }()
-            res, err := cli.Call(cmd.Context(), "lsp_info", nil)
-            if err != nil { return err }
-            data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
-            fmt.Println(string(data))
-            return nil
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_info", nil)
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		},
 	}
 }
@@ -65,18 +69,22 @@ func newLSPAnalyzeCommand() *cobra.Command {
 			}
 
 			cli, err := mcpclient.NewStdioClient(cmd.Context())
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			defer func() { _ = cli.Close() }()
 			res, err := cli.Call(cmd.Context(), "lsp_analyze", map[string]any{
-				"project":  project,
-				"file":     args[0],
+				"project":   project,
+				"file":      args[0],
 				"line":      lspLine,
 				"character": lspCharacter,
 				"hover":     includeHover,
 				"refs":      includeRefs,
 				"defs":      includeDefs,
 			})
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
 			fmt.Println(string(data))
 			return nil
@@ -111,16 +119,20 @@ func newLSPCompletionCommand() *cobra.Command {
 			}
 
 			cli, err := mcpclient.NewStdioClient(cmd.Context())
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			defer func() { _ = cli.Close() }()
 			res, err := cli.Call(cmd.Context(), "lsp_completion", map[string]any{
-				"project":    project,
-				"file":       args[0],
-				"line":       lspLine,
-				"character":  lspCharacter,
+				"project":     project,
+				"file":        args[0],
+				"line":        lspLine,
+				"character":   lspCharacter,
 				"max_results": maxResults,
 			})
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
 			fmt.Println(string(data))
 			return nil
@@ -154,14 +166,18 @@ func newLSPSymbolCommand() *cobra.Command {
 			}
 
 			cli, err := mcpclient.NewStdioClient(cmd.Context())
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			defer func() { _ = cli.Close() }()
 			res, err := cli.Call(cmd.Context(), "lsp_symbols", map[string]any{
-				"project":    project,
-				"query":      query,
+				"project":     project,
+				"query":       query,
 				"max_results": maxResults,
 			})
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
 			fmt.Println(string(data))
 			return nil
@@ -241,14 +257,18 @@ func newLSPListCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List installed language servers",
 		RunE: func(cmd *cobra.Command, args []string) error {
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
-            if err != nil { return err }
-            defer func() { _ = cli.Close() }()
-            res, err := cli.Call(cmd.Context(), "lsp_list", map[string]any{"dir": installDir})
-            if err != nil { return err }
-            data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
-            fmt.Println(string(data))
-            return nil
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_list", map[string]any{"dir": installDir})
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		},
 	}
 
@@ -265,14 +285,18 @@ func newLSPHealthCommand() *cobra.Command {
 		Use:   "health",
 		Short: "Check LSP health and language server availability",
 		RunE: func(cmd *cobra.Command, args []string) error {
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
-            if err != nil { return err }
-            defer func() { _ = cli.Close() }()
-            res, err := cli.Call(cmd.Context(), "lsp_health", map[string]any{"dir": installDir})
-            if err != nil { return err }
-            data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
-            fmt.Println(string(data))
-            return nil
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_health", map[string]any{"dir": installDir})
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		},
 	}
 
