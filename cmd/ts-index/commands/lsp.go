@@ -21,6 +21,7 @@ func NewLSPCommand() *cobra.Command {
 		newLSPCompletionCommand(),
 		newLSPSymbolCommand(),
 		newLSPInstallCommand(),
+		newLSPInstallByLanguageCommand(),
 		newLSPListCommand(),
 		newLSPHealthCommand(),
 	)
@@ -246,6 +247,37 @@ func newLSPInstallCommand() *cobra.Command {
 	cmd.Flags().StringVar(&installVersion, "version", "", "Specific version to install")
 	cmd.Flags().
 		StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
+
+	return cmd
+}
+
+func newLSPInstallByLanguageCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "install-by-language [language]",
+		Short: "Install language server by language type",
+		Long: `Install a language server using the language server manager.
+This command installs the appropriate LSP server for the specified language.
+
+Supported languages: typescript, javascript`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			language := args[0]
+
+			// Create language server manager with delegate
+			delegate := &lsp.SimpleDelegate{}
+			manager := lsp.NewLanguageServerManager(delegate)
+
+			fmt.Printf("Installing language server for language '%s'...\n", language)
+
+			err := manager.InstallLanguageServer(cmd.Context(), language)
+			if err != nil {
+				return fmt.Errorf("installation failed: %v", err)
+			}
+
+			fmt.Printf("✓ Successfully installed language server for language '%s'\n", language)
+			return nil
+		},
+	}
 
 	return cmd
 }

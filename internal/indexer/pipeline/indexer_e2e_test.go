@@ -5,11 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/0x5457/ts-index/internal/embeddings"
+	"github.com/0x5457/ts-index/internal/factory"
 	"github.com/0x5457/ts-index/internal/indexer/pipeline"
-	"github.com/0x5457/ts-index/internal/parser/tsparser"
-	"github.com/0x5457/ts-index/internal/storage/sqlite"
-	"github.com/0x5457/ts-index/internal/storage/sqlvec"
 )
 
 func Test_Indexer_E2E_TS(t *testing.T) {
@@ -23,17 +20,29 @@ func Test_Indexer_E2E_TS(t *testing.T) {
 
 	db := filepath.Join(tmp, "index.db")
 
-	p := tsparser.New()
-	e := embeddings.NewLocal(8)
-	s, err := sqlite.New(db)
+	// Create component factory
+	componentFactory := factory.NewComponentFactory(factory.ComponentConfig{
+		DBPath: db,
+	})
+
+	// Create components (but use local embedder for testing)
+	components, err := componentFactory.CreateComponents()
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := sqlvec.New(db, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	idx := pipeline.New(p, e, s, v, pipeline.Options{EmbedBatchSize: 2})
+	defer func() {
+		if cleanupErr := components.Cleanup(); cleanupErr != nil {
+			t.Logf("cleanup error: %v", cleanupErr)
+		}
+	}()
+
+	// Override with local embedder for testing
+	components.Embedder = componentFactory.CreateLocalEmbedder(8)
+
+	idx := componentFactory.CreateIndexerWithOptions(
+		components,
+		pipeline.Options{EmbedBatchSize: 2},
+	)
 
 	if err := idx.IndexProject(tmp); err != nil {
 		t.Fatalf("index project: %v", err)

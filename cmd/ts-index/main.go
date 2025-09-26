@@ -21,6 +21,7 @@ func main() {
 		commands.NewSearchCommand(),
 		commands.NewLSPCommand(),
 		commands.NewMCPServeCommand(),
+		commands.NewMCPClientCommand(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

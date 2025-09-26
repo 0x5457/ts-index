@@ -75,6 +75,7 @@ func TestLSPAnalyzeTool(t *testing.T) {
 
 func TestHandleSemanticSearchError(t *testing.T) {
 	ctx := context.Background()
+	srv := &Server{opts: ServerOptions{}}
 
 	// test missing required params
 	req := mcp.CallToolRequest{
@@ -84,7 +85,7 @@ func TestHandleSemanticSearchError(t *testing.T) {
 		},
 	}
 
-	result, err := handleSemanticSearch(ctx, req)
+	result, err := srv.handleSemanticSearch(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.NotEmpty(t, result.Content) // check error content
@@ -101,7 +102,8 @@ func TestHandleSymbolSearchError(t *testing.T) {
 		},
 	}
 
-	result, err := handleSymbolSearch(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleSymbolSearch(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.NotEmpty(t, result.Content) // check error content
@@ -118,7 +120,8 @@ func TestHandleLSPAnalyzeError(t *testing.T) {
 		},
 	}
 
-	result, err := handleLSPAnalyze(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleLSPAnalyze(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.NotEmpty(t, result.Content) // check error content
@@ -135,7 +138,8 @@ func TestHandleLSPCompletionError(t *testing.T) {
 		},
 	}
 
-	result, err := handleLSPCompletion(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleLSPCompletion(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.NotEmpty(t, result.Content) // check error content
@@ -152,7 +156,8 @@ func TestHandleLSPSymbolsError(t *testing.T) {
 		},
 	}
 
-	result, err := handleLSPSymbols(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleLSPSymbols(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.NotEmpty(t, result.Content) // check error content
@@ -168,7 +173,8 @@ func TestHandleLSPInfo(t *testing.T) {
 		},
 	}
 
-	result, err := handleLSPInfo(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleLSPInfo(ctx, req)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 	assert.NotNil(t, result.StructuredContent)
@@ -189,7 +195,8 @@ func TestHandleLSPList(t *testing.T) {
 		},
 	}
 
-	result, err := handleLSPList(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleLSPList(ctx, req)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 	assert.NotNil(t, result.StructuredContent)
@@ -209,7 +216,8 @@ func TestHandleLSPHealth(t *testing.T) {
 		},
 	}
 
-	result, err := handleLSPHealth(ctx, req)
+	srv := &Server{opts: ServerOptions{}}
+	result, err := srv.handleLSPHealth(ctx, req)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 	assert.NotNil(t, result.StructuredContent)

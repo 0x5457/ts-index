@@ -49,3 +49,11 @@ func (c *Client) Call(
 		mcp.CallToolRequest{Params: mcp.CallToolParams{Name: name, Arguments: args}},
 	)
 }
+
+// ListTools returns the list of available tools from the MCP server
+func (c *Client) ListTools(
+	ctx context.Context,
+	req mcp.ListToolsRequest,
+) (*mcp.ListToolsResult, error) {
+	return c.c.ListTools(ctx, req)
+}

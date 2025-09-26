@@ -5,11 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/0x5457/ts-index/internal/embeddings"
-	"github.com/0x5457/ts-index/internal/indexer/pipeline"
-	"github.com/0x5457/ts-index/internal/parser/tsparser"
-	"github.com/0x5457/ts-index/internal/storage/sqlite"
-	"github.com/0x5457/ts-index/internal/storage/sqlvec"
+	"github.com/0x5457/ts-index/internal/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -27,19 +23,28 @@ func NewIndexCommand() *cobra.Command {
 			if project == "" {
 				return fmt.Errorf("--project is required")
 			}
-			p := tsparser.New()
-			emb := embeddings.NewApi(embUrl)
-			sym, err := sqlite.New(dbPath)
+
+			// Create component factory
+			componentFactory := factory.NewComponentFactory(factory.ComponentConfig{
+				DBPath:   dbPath,
+				EmbedURL: embUrl,
+			})
+
+			// Create components
+			components, err := componentFactory.CreateComponents()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to create components: %w", err)
 			}
-			// dimension is inferred at first insert if set to 0
-			vecStore, err := sqlvec.New(dbPath, 0)
-			if err != nil {
-				return err
-			}
-			vec := vecStore
-			idx := pipeline.New(p, emb, sym, vec, pipeline.Options{})
+			defer func() {
+				if cleanupErr := components.Cleanup(); cleanupErr != nil {
+					fmt.Printf("failed to cleanup components: %v\n", cleanupErr)
+				}
+			}()
+
+			// Create indexer
+			idx := componentFactory.CreateIndexer(components)
+
+			// Run indexing with progress
 			progCh, errCh := idx.IndexProjectProgress(cmd.Context(), project)
 			for progCh != nil || errCh != nil {
 				select {
