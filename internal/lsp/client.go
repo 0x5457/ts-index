@@ -275,9 +275,25 @@ func (c *LSPClient) sendMessage(message interface{}) error {
 	}
 
 	content := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(data), data)
-	log.Printf("Sending LSP message: %s", content)
+
+	// Log basic message info without exposing sensitive content
+	method := c.extractMethodFromMessage(message)
+	log.Printf("Sending LSP message: method=%s, size=%d bytes", method, len(data))
+
 	_, err = c.stdin.Write([]byte(content))
 	return err
+}
+
+// extractMethodFromMessage safely extracts the method name from a message without exposing sensitive data
+func (c *LSPClient) extractMethodFromMessage(message interface{}) string {
+	switch msg := message.(type) {
+	case LSPRequest:
+		return msg.Method
+	case LSPNotification:
+		return msg.Method
+	default:
+		return "unknown"
+	}
 }
 
 // handleStdout handles stdout from the language server
