@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/0x5457/ts-index/cmd/cmdsfx"
+	"github.com/0x5457/ts-index/internal/app/appfx"
 	"github.com/0x5457/ts-index/internal/constants"
-	appfx "github.com/0x5457/ts-index/internal/fx"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
@@ -37,13 +38,13 @@ func NewMCPServeCommand() *cobra.Command {
 
 			// Create Fx app with configuration
 			app := fx.New(
-				appfx.AppModule,
+				appfx.Module,
 				fx.Supply(
 					fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
 					fx.Annotate(embedURL, fx.ResultTags(`name:"embedURL"`)),
 					fx.Annotate(project, fx.ResultTags(`name:"project"`)),
 				),
-				fx.Invoke(func(lc fx.Lifecycle, runner *appfx.CommandRunner) {
+				fx.Invoke(func(lc fx.Lifecycle, runner *cmdsfx.CommandRunner) {
 					lc.Append(fx.Hook{
 						OnStart: func(ctx context.Context) error {
 							go func() {
@@ -63,7 +64,7 @@ func NewMCPServeCommand() *cobra.Command {
 
 				// For http-handler, we need to register the handler during app construction
 				app = fx.New(
-					appfx.AppModule,
+					appfx.Module,
 					fx.Supply(
 						fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
 						fx.Annotate(embedURL, fx.ResultTags(`name:"embedURL"`)),

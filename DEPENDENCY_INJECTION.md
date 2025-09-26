@@ -138,7 +138,7 @@ Both `make lint-fix` and `make test` pass successfully, ensuring code quality an
 
 ## Migration Notes
 
-The original factory pattern in `internal/factory/` is preserved for backward compatibility, but new development should use the Fx modules for consistency and better maintainability.
+The original factory pattern has been completely replaced with the new modular Fx architecture for better maintainability and cleaner dependency management.
 
 ## Future Enhancements
 

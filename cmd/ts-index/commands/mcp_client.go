@@ -9,13 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0x5457/ts-index/internal/app/appfx"
 	"github.com/0x5457/ts-index/internal/constants"
-	"github.com/0x5457/ts-index/internal/factory"
 	"github.com/0x5457/ts-index/internal/indexer"
 	appmcp "github.com/0x5457/ts-index/internal/mcp"
 	"github.com/0x5457/ts-index/internal/search"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
+	"go.uber.org/fx"
 )
 
 const (
@@ -403,16 +404,20 @@ func createMCPClient(
 		var searchService *search.Service
 		var indexer indexer.Indexer
 		if config.DB != "" {
-			factory := factory.NewComponentFactory(factory.ComponentConfig{
-				DBPath:   config.DB,
-				EmbedURL: config.EmbedURL,
-			})
-			components, err := factory.CreateComponents()
-			if err != nil {
+			// Create Fx app to get components
+			app := fx.New(
+				appfx.Module,
+				fx.Supply(
+					fx.Annotate(config.DB, fx.ResultTags(`name:"dbPath"`)),
+					fx.Annotate(config.EmbedURL, fx.ResultTags(`name:"embedURL"`)),
+					fx.Annotate(config.Project, fx.ResultTags(`name:"project"`)),
+				),
+				fx.Populate(&searchService, &indexer),
+			)
+			if err := app.Start(ctx); err != nil {
 				return nil, fmt.Errorf("initialize components failed: %w", err)
 			}
-			searchService = components.Searcher
-			indexer = factory.CreateIndexerFromComponents(components)
+			// Note: We don't stop the app here as it's needed for the client lifetime
 		}
 		return appmcp.NewInProcessClient(ctx, searchService, indexer)
 	default:

@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/0x5457/ts-index/cmd/cmdsfx"
+	"github.com/0x5457/ts-index/internal/app/appfx"
 	"github.com/0x5457/ts-index/internal/constants"
-	appfx "github.com/0x5457/ts-index/internal/fx"
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 )
@@ -29,13 +30,13 @@ func NewIndexCommand() *cobra.Command {
 
 			// Create Fx app with configuration
 			app := fx.New(
-				appfx.AppModule,
+				appfx.Module,
 				fx.Supply(
 					fx.Annotate(dbPath, fx.ResultTags(`name:"dbPath"`)),
 					fx.Annotate(embUrl, fx.ResultTags(`name:"embedURL"`)),
 					fx.Annotate("", fx.ResultTags(`name:"project"`)),
 				),
-				fx.Invoke(func(runner *appfx.CommandRunner) error {
+				fx.Invoke(func(runner *cmdsfx.CommandRunner) error {
 					return runner.RunIndex(cmd.Context(), project)
 				}),
 			)

@@ -1,9 +1,10 @@
-package fx
+package cmdsfx
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/0x5457/ts-index/internal/config/configfx"
 	"github.com/0x5457/ts-index/internal/indexer"
 	"github.com/0x5457/ts-index/internal/search"
 	"github.com/mark3labs/mcp-go/server"
@@ -12,24 +13,24 @@ import (
 
 // CommandRunner provides methods to run different application commands
 type CommandRunner struct {
-	config        *Config
+	config        *configfx.Config
 	searchService *search.Service
 	indexer       indexer.Indexer
 	mcpServer     *server.MCPServer
 }
 
-// CommandParams represents dependencies for command runner
-type CommandParams struct {
+// Params represents dependencies for command runner
+type Params struct {
 	fx.In
 
-	Config        *Config
+	Config        *configfx.Config
 	SearchService *search.Service   `optional:"true"`
 	Indexer       indexer.Indexer   `optional:"true"`
 	MCPServer     *server.MCPServer `optional:"true"`
 }
 
 // NewCommandRunner creates a new command runner
-func NewCommandRunner(params CommandParams) *CommandRunner {
+func NewCommandRunner(params Params) *CommandRunner {
 	return &CommandRunner{
 		config:        params.Config,
 		searchService: params.SearchService,
@@ -137,7 +138,7 @@ func (r *CommandRunner) RunMCPServer(transport, address string) error {
 	}
 }
 
-// CommandModule provides command runner
-var CommandModule = fx.Module("commands",
+// Module provides command runner
+var Module = fx.Module("commands",
 	fx.Provide(NewCommandRunner),
 )

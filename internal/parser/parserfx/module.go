@@ -1,4 +1,4 @@
-package fx
+package parserfx
 
 import (
 	"github.com/0x5457/ts-index/internal/parser"
@@ -11,7 +11,7 @@ func NewParser() parser.Parser {
 	return tsparser.New()
 }
 
-// ParserModule provides parser components
-var ParserModule = fx.Module("parser",
+// Module provides parser components
+var Module = fx.Module("parser",
 	fx.Provide(NewParser),
 )

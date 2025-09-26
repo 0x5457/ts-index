@@ -1,4 +1,4 @@
-package fx
+package indexerfx
 
 import (
 	"github.com/0x5457/ts-index/internal/embeddings"
@@ -9,8 +9,8 @@ import (
 	"go.uber.org/fx"
 )
 
-// IndexerParams represents dependencies for indexer components
-type IndexerParams struct {
+// Params represents dependencies for indexer components
+type Params struct {
 	fx.In
 
 	Parser   parser.Parser
@@ -20,7 +20,7 @@ type IndexerParams struct {
 }
 
 // NewIndexer creates a new indexer instance
-func NewIndexer(params IndexerParams) indexer.Indexer {
+func NewIndexer(params Params) indexer.Indexer {
 	return pipeline.New(
 		params.Parser,
 		params.Embedder,
@@ -30,7 +30,7 @@ func NewIndexer(params IndexerParams) indexer.Indexer {
 	)
 }
 
-// IndexerModule provides indexer components
-var IndexerModule = fx.Module("indexer",
+// Module provides indexer components
+var Module = fx.Module("indexer",
 	fx.Provide(NewIndexer),
 )

@@ -1,4 +1,4 @@
-package fx
+package searchfx
 
 import (
 	"github.com/0x5457/ts-index/internal/embeddings"
@@ -7,8 +7,8 @@ import (
 	"go.uber.org/fx"
 )
 
-// SearchParams represents dependencies for search service
-type SearchParams struct {
+// Params represents dependencies for search service
+type Params struct {
 	fx.In
 
 	Embedder embeddings.Embedder
@@ -16,14 +16,14 @@ type SearchParams struct {
 }
 
 // NewSearchService creates a new search service instance
-func NewSearchService(params SearchParams) *search.Service {
+func NewSearchService(params Params) *search.Service {
 	return &search.Service{
 		Embedder: params.Embedder,
 		Vector:   params.VecStore,
 	}
 }
 
-// SearchModule provides search components
-var SearchModule = fx.Module("search",
+// Module provides search components
+var Module = fx.Module("search",
 	fx.Provide(NewSearchService),
 )

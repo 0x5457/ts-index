@@ -1,4 +1,4 @@
-package fx
+package configfx
 
 import (
 	"github.com/0x5457/ts-index/internal/constants"
@@ -13,8 +13,8 @@ type Config struct {
 	Project         string // Optional project path for pre-indexing
 }
 
-// ConfigParams represents the parameters needed to create configuration
-type ConfigParams struct {
+// Params represents the parameters needed to create configuration
+type Params struct {
 	fx.In
 
 	DBPath   string `name:"dbPath"   optional:"true"`
@@ -23,7 +23,7 @@ type ConfigParams struct {
 }
 
 // NewConfig creates a new configuration with defaults
-func NewConfig(params ConfigParams) *Config {
+func NewConfig(params Params) *Config {
 	config := &Config{
 		DBPath:          params.DBPath,
 		EmbedURL:        params.EmbedURL,
@@ -39,7 +39,7 @@ func NewConfig(params ConfigParams) *Config {
 	return config
 }
 
-// ConfigModule provides configuration for the application
-var ConfigModule = fx.Module("config",
+// Module provides configuration for the application
+var Module = fx.Module("config",
 	fx.Provide(NewConfig),
 )
