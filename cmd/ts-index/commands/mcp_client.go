@@ -379,22 +379,22 @@ func newMCPLSPCommand() *cobra.Command {
 
 func createMCPClient(
 	ctx context.Context,
-	transport, _address string,
+	transport, address string,
 	config appmcp.ServerConfig,
 ) (*appmcp.Client, error) {
 	switch transport {
 	case transportStdio:
 		return appmcp.NewStdioClientWithConfig(ctx, config)
 	case transportHTTP:
-		if _address == "" {
-			_address = "http://127.0.0.1:8080/mcp"
+		if address == "" {
+			address = "http://127.0.0.1:8080/mcp"
 		}
-		return appmcp.NewHTTPClient(ctx, _address)
+		return appmcp.NewHTTPClient(ctx, address)
 	case transportSSE:
-		if _address == "" {
-			_address = "http://127.0.0.1:8080/mcp/sse"
+		if address == "" {
+			address = "http://127.0.0.1:8080/mcp/sse"
 		}
-		return appmcp.NewSSEClient(ctx, _address)
+		return appmcp.NewSSEClient(ctx, address)
 	case transportInproc:
 		return appmcp.NewInProcessClient(ctx, config)
 	default:
