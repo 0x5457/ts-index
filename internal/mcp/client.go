@@ -1,14 +1,14 @@
 package mcp
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"time"
+    "context"
+    "fmt"
+    "os"
+    "time"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/mark3labs/mcp-go/mcp"
+    "github.com/mark3labs/mcp-go/client"
+    "github.com/mark3labs/mcp-go/client/transport"
+    "github.com/mark3labs/mcp-go/mcp"
 )
 
 // Client wraps an MCP stdio client aimed at our own server executable.
@@ -53,25 +53,67 @@ func NewStdioClientWithConfig(ctx context.Context, config ServerConfig) (*Client
 	if err := tr.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start mcp transport: %w", err)
 	}
-	cli := client.NewClient(tr)
+    cli := client.NewClient(tr)
+    return initializeClient(ctx, cli)
+}
 
-	ctxStart, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := cli.Start(ctxStart); err != nil {
-		return nil, fmt.Errorf("start mcp client: %w", err)
-	}
+// NewHTTPClient creates an MCP client using Streamable HTTP transport to a serverURL,
+// for example: http://127.0.0.1:8080/mcp
+func NewHTTPClient(ctx context.Context, serverURL string) (*Client, error) {
+    tr, err := transport.NewStreamableHTTP(serverURL)
+    if err != nil {
+        return nil, fmt.Errorf("create http transport: %w", err)
+    }
+    if err := tr.Start(ctx); err != nil {
+        return nil, fmt.Errorf("start http transport: %w", err)
+    }
+    cli := client.NewClient(tr)
+    return initializeClient(ctx, cli)
+}
 
-	initReq := mcp.InitializeRequest{}
-	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initReq.Params.ClientInfo = mcp.Implementation{Name: "ts-index", Version: "0.1.0"}
-	initReq.Params.Capabilities = mcp.ClientCapabilities{}
+// NewSSEClient creates an MCP client using SSE transport to the SSE endpoint,
+// for example: http://127.0.0.1:8080/sse
+func NewSSEClient(ctx context.Context, sseURL string) (*Client, error) {
+    tr, err := transport.NewSSE(sseURL)
+    if err != nil {
+        return nil, fmt.Errorf("create sse transport: %w", err)
+    }
+    if err := tr.Start(ctx); err != nil {
+        return nil, fmt.Errorf("start sse transport: %w", err)
+    }
+    cli := client.NewClient(tr)
+    return initializeClient(ctx, cli)
+}
 
-	if _, err := cli.Initialize(ctx, initReq); err != nil {
-		_ = cli.Close()
-		return nil, fmt.Errorf("init mcp client: %w", err)
-	}
+// NewInProcessClient creates an MCP client connected to an in-process server instance.
+func NewInProcessClient(ctx context.Context, config ServerConfig) (*Client, error) {
+    srv := NewWithOptions(config)
+    tr := transport.NewInProcessTransport(srv)
+    if err := tr.Start(ctx); err != nil {
+        return nil, fmt.Errorf("start in-process transport: %w", err)
+    }
+    cli := client.NewClient(tr)
+    return initializeClient(ctx, cli)
+}
 
-	return &Client{c: cli}, nil
+// initializeClient starts and initializes the MCP client with default capabilities.
+func initializeClient(ctx context.Context, cli *client.Client) (*Client, error) {
+    ctxStart, cancel := context.WithTimeout(ctx, 30*time.Second)
+    defer cancel()
+    if err := cli.Start(ctxStart); err != nil {
+        return nil, fmt.Errorf("start mcp client: %w", err)
+    }
+
+    initReq := mcp.InitializeRequest{}
+    initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+    initReq.Params.ClientInfo = mcp.Implementation{Name: "ts-index", Version: "0.1.0"}
+    initReq.Params.Capabilities = mcp.ClientCapabilities{}
+
+    if _, err := cli.Initialize(ctx, initReq); err != nil {
+        _ = cli.Close()
+        return nil, fmt.Errorf("init mcp client: %w", err)
+    }
+    return &Client{c: cli}, nil
 }
 
 func (c *Client) Close() error {

@@ -1,13 +1,13 @@
 package commands
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
 
-	mcpclient "github.com/0x5457/ts-index/internal/mcp"
-	"github.com/spf13/cobra"
+    mcpclient "github.com/0x5457/ts-index/internal/mcp"
+    "github.com/spf13/cobra"
 )
 
 func NewSearchCommand() *cobra.Command {
@@ -17,6 +17,8 @@ func NewSearchCommand() *cobra.Command {
 		embUrl  string
 		topK    int
 		symbol  bool
+        transport string
+        address   string
 	)
 
 	cmd := &cobra.Command{
@@ -25,7 +27,26 @@ func NewSearchCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := args[0]
-			cli, err := mcpclient.NewStdioClient(cmd.Context())
+            // choose transport
+            var cli *mcpclient.Client
+            switch transport {
+            case "", "stdio":
+                cli, err = mcpclient.NewStdioClient(cmd.Context())
+            case "http":
+                addr := address
+                if addr == "" {
+                    addr = "http://127.0.0.1:8080/mcp"
+                }
+                cli, err = mcpclient.NewHTTPClient(cmd.Context(), addr)
+            case "sse":
+                addr := address
+                if addr == "" {
+                    addr = "http://127.0.0.1:8080/mcp/sse"
+                }
+                cli, err = mcpclient.NewSSEClient(cmd.Context(), addr)
+            default:
+                return fmt.Errorf("unsupported transport: %s (supported: stdio, http, sse)", transport)
+            }
 			if err != nil {
 				return err
 			}
@@ -77,6 +98,8 @@ func NewSearchCommand() *cobra.Command {
 	cmd.Flags().IntVar(&topK, "top-k", 5, "Top K results")
 	cmd.Flags().BoolVar(&symbol, "symbol", false, "Use exact symbol name search")
 	cmd.Flags().StringVar(&embUrl, "embed-url", defaultEmbUrl, "Embedding API URL")
+    cmd.Flags().StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse)")
+    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse)")
 
 	return cmd
 }

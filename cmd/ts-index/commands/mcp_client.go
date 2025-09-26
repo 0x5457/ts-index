@@ -116,9 +116,9 @@ Example:
 	cmd.Flags().StringVarP(&db, "db", "d", "", "SQLite database path")
 	cmd.Flags().
 		StringVar(&embedURL, "embed-url", "http://localhost:8000/embed", "embed API address")
-	cmd.Flags().
-		StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, tcp, websocket)")
-	cmd.Flags().StringVarP(&address, "address", "a", "", "server address (TCP/WebSocket mode)")
+    cmd.Flags().
+        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
+    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -187,9 +187,9 @@ func newMCPListToolsCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().
-		StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, tcp, websocket)")
-	cmd.Flags().StringVarP(&address, "address", "a", "", "server address (TCP/WebSocket mode)")
+    cmd.Flags().
+        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
+    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -258,9 +258,9 @@ func newMCPSearchCommand() *cobra.Command {
 	cmd.Flags().
 		StringVar(&embedURL, "embed-url", "http://localhost:8000/embed", "embed API address")
 	cmd.Flags().IntVarP(&topK, "top-k", "k", 5, "number of results")
-	cmd.Flags().
-		StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, tcp, websocket)")
-	cmd.Flags().StringVarP(&address, "address", "a", "", "server address (TCP/WebSocket mode)")
+    cmd.Flags().
+        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
+    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -359,10 +359,10 @@ func newMCPLSPCommand() *cobra.Command {
 	cmd.AddCommand(infoCmd, analyzeCmd)
 
 	cmd.PersistentFlags().StringVarP(&project, "project", "p", "", "project path")
-	cmd.PersistentFlags().
-		StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, tcp, websocket)")
-	cmd.PersistentFlags().
-		StringVarP(&address, "address", "a", "", "server address (TCP/WebSocket mode)")
+    cmd.PersistentFlags().
+        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
+    cmd.PersistentFlags().
+        StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -375,11 +375,19 @@ func createMCPClient(
 	switch transport {
 	case "stdio":
 		return appmcp.NewStdioClientWithConfig(ctx, config)
+    case "http":
+        if _address == "" {
+            _address = "http://127.0.0.1:8080/mcp"
+        }
+        return appmcp.NewHTTPClient(ctx, _address)
+    case "sse":
+        if _address == "" {
+            _address = "http://127.0.0.1:8080/mcp/sse"
+        }
+        return appmcp.NewSSEClient(ctx, _address)
+    case "inproc":
+        return appmcp.NewInProcessClient(ctx, config)
 	default:
-		return nil, fmt.Errorf(
-			"only stdio transport is supported,"+
-				" other transports (%s) are not implemented",
-			transport,
-		)
+        return nil, fmt.Errorf("unsupported transport: %s (supported: stdio, http, sse, inproc)", transport)
 	}
 }
