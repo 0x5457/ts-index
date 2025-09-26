@@ -15,7 +15,7 @@ func main() {
 		and performing semantic search with Language Server Protocol support.`,
 	}
 
-	// Add all command modules
+	// Add all command modules - now using Fx for dependency injection
 	rootCmd.AddCommand(
 		commands.NewIndexCommand(),
 		commands.NewSearchCommand(),

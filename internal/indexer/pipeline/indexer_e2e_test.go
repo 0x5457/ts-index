@@ -1,12 +1,18 @@
 package pipeline_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/0x5457/ts-index/internal/factory"
-	"github.com/0x5457/ts-index/internal/indexer/pipeline"
+	"github.com/0x5457/ts-index/internal/config/configfx"
+	"github.com/0x5457/ts-index/internal/embeddings"
+	"github.com/0x5457/ts-index/internal/indexer"
+	"github.com/0x5457/ts-index/internal/indexer/indexerfx"
+	"github.com/0x5457/ts-index/internal/parser/parserfx"
+	"github.com/0x5457/ts-index/internal/storage/storagefx"
+	"go.uber.org/fx"
 )
 
 func Test_Indexer_E2E_TS(t *testing.T) {
@@ -20,29 +26,41 @@ func Test_Indexer_E2E_TS(t *testing.T) {
 
 	db := filepath.Join(tmp, "index.db")
 
-	// Create component factory
-	componentFactory := factory.NewComponentFactory(factory.ComponentConfig{
-		DBPath: db,
-	})
+	// Create test local embedder
+	testEmbedderModule := fx.Module("test-embeddings",
+		fx.Provide(func() embeddings.Embedder {
+			return embeddings.NewLocal(8) // 8-dimensional for testing
+		}),
+		fx.Decorate(func(embedder embeddings.Embedder) embeddings.Embedder {
+			return embedder // Override the API embedder with local one
+		}),
+	)
 
-	// Create components (but use local embedder for testing)
-	components, err := componentFactory.CreateComponents()
-	if err != nil {
+	// Create Fx app with test configuration
+	var idx indexer.Indexer
+	app := fx.New(
+		configfx.Module,
+		parserfx.Module,
+		testEmbedderModule, // Use test embedder instead of embeddingsfx.Module
+		storagefx.Module,
+		indexerfx.Module,
+		fx.Supply(
+			fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
+			fx.Annotate("", fx.ResultTags(`name:"embedURL"`)),
+			fx.Annotate("", fx.ResultTags(`name:"project"`)),
+		),
+		fx.Populate(&idx),
+	)
+
+	ctx := context.Background()
+	if err := app.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if cleanupErr := components.Cleanup(); cleanupErr != nil {
-			t.Logf("cleanup error: %v", cleanupErr)
+		if err := app.Stop(ctx); err != nil {
+			t.Logf("cleanup error: %v", err)
 		}
 	}()
-
-	// Override with local embedder for testing
-	components.Embedder = componentFactory.CreateLocalEmbedder(8)
-
-	idx := componentFactory.CreateIndexerWithOptions(
-		components,
-		pipeline.Options{EmbedBatchSize: 2},
-	)
 
 	if err := idx.IndexProject(tmp); err != nil {
 		t.Fatalf("index project: %v", err)

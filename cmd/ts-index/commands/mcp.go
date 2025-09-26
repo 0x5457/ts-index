@@ -1,16 +1,16 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
+	"github.com/0x5457/ts-index/cmd/cmdsfx"
+	"github.com/0x5457/ts-index/internal/app/appfx"
 	"github.com/0x5457/ts-index/internal/constants"
-	"github.com/0x5457/ts-index/internal/factory"
-	"github.com/0x5457/ts-index/internal/indexer"
-	appmcp "github.com/0x5457/ts-index/internal/mcp"
-	"github.com/0x5457/ts-index/internal/search"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
+	"go.uber.org/fx"
 )
 
 // NewMCPServeCommand starts an MCP stdio server that exposes search and LSP tools.
@@ -33,71 +33,73 @@ func NewMCPServeCommand() *cobra.Command {
 				embedURL = constants.DefaultEmbedURL
 			}
 
-			// Create factory and components in the outer layer
-			componentFactory := factory.NewComponentFactory(factory.ComponentConfig{
-				DBPath:   db,
-				EmbedURL: embedURL,
-			})
+			// Create result channel for server errors
+			resultCh := make(chan error, 1)
 
-			var searchService *search.Service
-			var indexer indexer.Indexer
+			// Create Fx app with configuration
+			app := fx.New(
+				appfx.Module,
+				fx.Supply(
+					fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
+					fx.Annotate(embedURL, fx.ResultTags(`name:"embedURL"`)),
+					fx.Annotate(project, fx.ResultTags(`name:"project"`)),
+				),
+				fx.Invoke(func(lc fx.Lifecycle, runner *cmdsfx.CommandRunner) {
+					lc.Append(fx.Hook{
+						OnStart: func(ctx context.Context) error {
+							go func() {
+								resultCh <- runner.RunMCPServer(transport, address)
+							}()
+							return nil
+						},
+					})
+				}),
+			)
 
-			if db != "" {
-				components, err := componentFactory.CreateComponents()
-				if err != nil {
-					return fmt.Errorf("initialize components failed: %w", err)
-				}
-
-				searchService = components.Searcher
-				indexer = componentFactory.CreateIndexerFromComponents(components)
-
-				// If Project is specified, pre-index it
-				if project != "" {
-					if err := indexer.IndexProject(project); err != nil {
-						return fmt.Errorf("pre-index project failed: %w", err)
-					}
-				}
-			}
-
-			// Create server with injected dependencies
-			s := appmcp.New(searchService, indexer)
-
-			switch transport {
-			case "stdio":
-				return server.ServeStdio(s)
-			case "http":
-				// Streamable HTTP server on address, default ":8080" if empty
-				addr := address
-				if addr == "" {
-					addr = ":8080"
-				}
-				httpSrv := server.NewStreamableHTTPServer(s)
-				return httpSrv.Start(addr)
-			case "sse":
-				// SSE server exposes two endpoints; default base path "/mcp"
-				addr := address
-				if addr == "" {
-					addr = ":8080"
-				}
-				sseSrv := server.NewSSEServer(s,
-					server.WithBaseURL(""),
-					server.WithStaticBasePath("/mcp"),
-				)
-				return sseSrv.Start(addr)
-			case "http-handler":
-				// Advanced: mount handlers on default net/http mux
-				// address must be provided
+			// Handle http-handler case separately as it needs special handling
+			if transport == "http-handler" {
 				if address == "" {
 					return fmt.Errorf("--address is required for http-handler mode, e.g. :8080")
 				}
-				sh := server.NewStreamableHTTPServer(s)
-				http.Handle("/mcp", sh)
-				return http.ListenAndServe(address, nil)
-			default:
-				return fmt.Errorf(
-					"unsupported transport: %s (supported: stdio, http, sse, http-handler)",
-					transport,
+
+				// For http-handler, we need to register the handler during app construction
+				app = fx.New(
+					appfx.Module,
+					fx.Supply(
+						fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
+						fx.Annotate(embedURL, fx.ResultTags(`name:"embedURL"`)),
+						fx.Annotate(project, fx.ResultTags(`name:"project"`)),
+					),
+					fx.Invoke(func(srv *server.MCPServer) {
+						sh := server.NewStreamableHTTPServer(srv)
+						http.Handle("/mcp", sh)
+					}),
 				)
+
+				ctx, cancel := context.WithCancel(cmd.Context())
+				defer cancel()
+
+				if err := app.Start(ctx); err != nil {
+					return fmt.Errorf("failed to start application: %w", err)
+				}
+
+				return http.ListenAndServe(address, nil)
+			}
+
+			// Start the app
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			if err := app.Start(ctx); err != nil {
+				return fmt.Errorf("failed to start application: %w", err)
+			}
+
+			// Wait for server result or context cancellation
+			select {
+			case err := <-resultCh:
+				return err
+			case <-cmd.Context().Done():
+				return cmd.Context().Err()
 			}
 		},
 	}
