@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	tsLanguageServerNotInstalledMsg = "typescript-language-server is not installed. Use 'ts-index lsp install typescript-language-server'"
+	tsLanguageServerNotInstalledMsg = `typescript-language-server is not installed. 
+		Use 'ts-index lsp install typescript-language-server'`
 )
 
 // IsVTSLSInstalled checks if vtsls is installed and available
@@ -293,8 +294,8 @@ func (a *TypeScriptLspAdapter) IsInstalled() bool {
 }
 
 // Helper functions
-
-func shouldIncludeDiagnostic(diag Diagnostic) bool {
+// unparam
+func shouldIncludeDiagnostic(diag Diagnostic) bool { //nolint:unparam
 	// Skip certain noisy diagnostics
 	if diag.Source != nil {
 		source := *diag.Source
