@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/0x5457/ts-index/internal/embeddings"
 	"github.com/0x5457/ts-index/internal/indexer/pipeline"
+	"github.com/0x5457/ts-index/internal/lsp"
 	"github.com/0x5457/ts-index/internal/parser/tsparser"
 	"github.com/0x5457/ts-index/internal/search"
 	"github.com/0x5457/ts-index/internal/storage/sqlite"
@@ -157,7 +159,175 @@ func main() {
 	searchCmd.Flags().BoolVar(&symbol, "symbol", false, "Use exact symbol name search")
 	searchCmd.Flags().StringVar(&embUrl, "embed-url", embUrl, "Embedding API URL")
 
-	rootCmd.AddCommand(indexCmd, searchCmd)
+	// LSP commands
+	lspCmd := &cobra.Command{
+		Use:   "lsp",
+		Short: "Language Server Protocol commands",
+	}
+
+	// LSP server command
+	var port int
+	lspServerCmd := &cobra.Command{
+		Use:   "server",
+		Short: "Start LSP HTTP server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			lspService := lsp.NewLSPService()
+			defer lspService.Cleanup()
+
+			mux := http.NewServeMux()
+			lspService.RegisterHandlers(mux)
+
+			addr := fmt.Sprintf(":%d", port)
+			log.Printf("Starting LSP server on %s", addr)
+			return http.ListenAndServe(addr, mux)
+		},
+	}
+	lspServerCmd.Flags().IntVar(&port, "port", 8080, "Server port")
+
+	// LSP analyze command
+	var (
+		lspLine        int
+		lspCharacter   int
+		includeHover   bool
+		includeRefs    bool
+		includeDefs    bool
+	)
+	lspAnalyzeCmd := &cobra.Command{
+		Use:   "analyze [file-path]",
+		Short: "Analyze symbol at position using LSP",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" {
+				return fmt.Errorf("--project is required")
+			}
+
+			lspCommand := lsp.NewLSPCommand()
+			defer lspCommand.Cleanup()
+
+			result, err := lspCommand.AnalyzeSymbolJSON(
+				cmd.Context(),
+				project,
+				args[0],
+				lspLine,
+				lspCharacter,
+				includeHover,
+				includeRefs,
+				includeDefs,
+			)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(result)
+			return nil
+		},
+	}
+	lspAnalyzeCmd.Flags().StringVar(&project, "project", "", "Path to project root")
+	lspAnalyzeCmd.Flags().IntVar(&lspLine, "line", 0, "Line number (0-based)")
+	lspAnalyzeCmd.Flags().IntVar(&lspCharacter, "character", 0, "Character number (0-based)")
+	lspAnalyzeCmd.Flags().BoolVar(&includeHover, "hover", true, "Include hover information")
+	lspAnalyzeCmd.Flags().BoolVar(&includeRefs, "refs", false, "Include references")
+	lspAnalyzeCmd.Flags().BoolVar(&includeDefs, "defs", true, "Include definitions")
+
+	// LSP completion command
+	var maxResults int
+	lspCompletionCmd := &cobra.Command{
+		Use:   "completion [file-path]",
+		Short: "Get completion items at position using LSP",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" {
+				return fmt.Errorf("--project is required")
+			}
+
+			lspCommand := lsp.NewLSPCommand()
+			defer lspCommand.Cleanup()
+
+			result, err := lspCommand.GetCompletionJSON(
+				cmd.Context(),
+				project,
+				args[0],
+				lspLine,
+				lspCharacter,
+				maxResults,
+			)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(result)
+			return nil
+		},
+	}
+	lspCompletionCmd.Flags().StringVar(&project, "project", "", "Path to project root")
+	lspCompletionCmd.Flags().IntVar(&lspLine, "line", 0, "Line number (0-based)")
+	lspCompletionCmd.Flags().IntVar(&lspCharacter, "character", 0, "Character number (0-based)")
+	lspCompletionCmd.Flags().IntVar(&maxResults, "max-results", 20, "Maximum number of results")
+
+	// LSP symbol search command
+	var query string
+	lspSymbolCmd := &cobra.Command{
+		Use:   "symbols",
+		Short: "Search workspace symbols using LSP",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" {
+				return fmt.Errorf("--project is required")
+			}
+			if query == "" {
+				return fmt.Errorf("--query is required")
+			}
+
+			lspCommand := lsp.NewLSPCommand()
+			defer lspCommand.Cleanup()
+
+			result, err := lspCommand.SearchSymbolsJSON(
+				cmd.Context(),
+				project,
+				query,
+				maxResults,
+			)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(result)
+			return nil
+		},
+	}
+	lspSymbolCmd.Flags().StringVar(&project, "project", "", "Path to project root")
+	lspSymbolCmd.Flags().StringVar(&query, "query", "", "Search query")
+	lspSymbolCmd.Flags().IntVar(&maxResults, "max-results", 50, "Maximum number of results")
+
+	// LSP health command
+	lspHealthCmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check LSP health and language server availability",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if lsp.IsVTSLSInstalled() {
+				fmt.Println("✓ vtsls is installed and available")
+			} else {
+				fmt.Println("✗ vtsls is not installed")
+				fmt.Printf("Install with: %s\n", lsp.InstallVTSLSCommand())
+			}
+			
+			if lsp.IsTypeScriptLanguageServerInstalled() {
+				fmt.Println("✓ typescript-language-server is installed and available")
+			} else {
+				fmt.Println("✗ typescript-language-server is not installed")
+				fmt.Printf("Install with: %s\n", lsp.InstallTypeScriptLanguageServerCommand())
+			}
+			
+			if !lsp.IsVTSLSInstalled() && !lsp.IsTypeScriptLanguageServerInstalled() {
+				fmt.Println("\n⚠️  No TypeScript language servers are available")
+				fmt.Println("Please install at least one of the above language servers to use LSP functionality")
+			}
+			
+			return nil
+		},
+	}
+
+	lspCmd.AddCommand(lspServerCmd, lspAnalyzeCmd, lspCompletionCmd, lspSymbolCmd, lspHealthCmd)
+	rootCmd.AddCommand(indexCmd, searchCmd, lspCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
