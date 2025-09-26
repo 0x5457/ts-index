@@ -224,7 +224,7 @@ func (ct *ClientTools) GetCompletion(
 
 		items = append(items, CompletionItemResult{
 			Label:      item.Label,
-			Kind:       int(*item.Kind),
+			Kind:       getCompletionKindValue(item.Kind),
 			Detail:     getStringValue(item.Detail),
 			InsertText: getStringValue(item.InsertText),
 		})
@@ -390,6 +390,13 @@ func getStringValue(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func getCompletionKindValue(k *CompletionKind) int {
+	if k == nil {
+		return 0 // Default to 0 when nil (no specific kind)
+	}
+	return int(*k)
 }
 
 // SimpleDelegate provides a minimal implementation of LanguageServerDelegate

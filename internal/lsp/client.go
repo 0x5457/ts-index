@@ -159,10 +159,18 @@ func (c *LSPClient) Stop() error {
 
 	atomic.StoreInt32(&c.running, 0)
 
-	// Send shutdown request
-	if err := c.sendNotification("shutdown", nil); err != nil {
-		log.Printf("Failed to send shutdown notification: %v", err)
+	// Send shutdown request and wait for response (required by LSP spec)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := c.sendRequest(ctx, "shutdown", nil); err != nil {
+		log.Printf("Failed to send shutdown request: %v", err)
+		// Continue with exit even if shutdown failed
+	} else {
+		log.Printf("Shutdown request completed successfully")
 	}
+
+	// Send exit notification after shutdown response
 	if err := c.sendNotification("exit", nil); err != nil {
 		log.Printf("Failed to send exit notification: %v", err)
 	}
