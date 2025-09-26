@@ -1,17 +1,13 @@
 package commands
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
 
-	"github.com/0x5457/ts-index/internal/embeddings"
-	"github.com/0x5457/ts-index/internal/indexer/pipeline"
-	"github.com/0x5457/ts-index/internal/parser/tsparser"
-	"github.com/0x5457/ts-index/internal/search"
-	"github.com/0x5457/ts-index/internal/storage/sqlite"
-	"github.com/0x5457/ts-index/internal/storage/sqlvec"
-	"github.com/spf13/cobra"
+    mcpclient "github.com/0x5457/ts-index/internal/mcp"
+    "github.com/spf13/cobra"
 )
 
 func NewSearchCommand() *cobra.Command {
@@ -23,72 +19,56 @@ func NewSearchCommand() *cobra.Command {
 		symbol  bool
 	)
 
-	cmd := &cobra.Command{
+    cmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search code: semantic (default) or exact symbol",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			query := args[0]
-			p := tsparser.New()
-			emb := embeddings.NewApi(embUrl)
-			sym, err := sqlite.New(dbPath)
-			if err != nil {
-				return err
-			}
-			vecStore, err := sqlvec.New(dbPath, 0)
-			if err != nil {
-				return err
-			}
-			vec := vecStore
-			idx := pipeline.New(p, emb, sym, vec, pipeline.Options{})
+            query := args[0]
+            cli, err := mcpclient.NewStdioClient(cmd.Context())
+            if err != nil {
+                return err
+            }
+            defer func() { _ = cli.Close() }()
 
-			if symbol {
-				// exact symbol search
-				hits, err := idx.SearchSymbol(query)
-				if err != nil {
-					return err
-				}
-				for _, h := range hits {
-					fmt.Printf(
-						"%s %s:%d-%d\n",
-						h.Symbol.Name,
-						h.Symbol.File,
-						h.Symbol.StartLine,
-						h.Symbol.EndLine,
-					)
-				}
-				return nil
-			}
+            if symbol {
+                res, err := cli.Call(cmd.Context(), "symbol_search", map[string]any{
+                    "name": query,
+                    "db":   dbPath,
+                })
+                if err != nil {
+                    return err
+                }
+                if res.IsError {
+                    b, _ := json.Marshal(res.StructuredContent)
+                    return fmt.Errorf(string(b))
+                }
+                b, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+                fmt.Println(string(b))
+                return nil
+            }
 
-			// semantic search
-			if project != "" {
-				if err := idx.IndexProject(project); err != nil {
-					return err
-				}
-			}
-			svc := &search.Service{
-				Embedder: emb,
-				Vector:   vec,
-			}
-			hits, err := svc.Search(cmd.Context(), query, topK)
-			if err != nil {
-				return err
-			}
-			for _, hit := range hits {
-				fmt.Printf(
-					"[%.3f] %s %s:%d-%d\n",
-					hit.Score,
-					hit.Chunk.Name,
-					hit.Chunk.File,
-					hit.Chunk.StartLine,
-					hit.Chunk.EndLine,
-				)
-			}
-			return nil
+            res, err := cli.Call(cmd.Context(), "semantic_search", map[string]any{
+                "query":     query,
+                "db":        dbPath,
+                "embed_url": embUrl,
+                "top_k":     topK,
+                "project":   project,
+            })
+            if err != nil {
+                return err
+            }
+            if res.IsError {
+                b, _ := json.Marshal(res.StructuredContent)
+                return fmt.Errorf(string(b))
+            }
+            b, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+            fmt.Println(string(b))
+            return nil
 		},
 	}
 
-	defaultEmbUrl := "http://localhost:8000/embed"
+    defaultEmbUrl := "http://localhost:8000/embed"
 	defaultDbPath := filepath.Join(os.TempDir(), "ts_index.db")
 
 	cmd.Flags().

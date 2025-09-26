@@ -20,6 +20,7 @@ func main() {
 		commands.NewIndexCommand(),
 		commands.NewSearchCommand(),
 		commands.NewLSPCommand(),
+		commands.NewMCPServeCommand(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
