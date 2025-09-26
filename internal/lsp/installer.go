@@ -4,11 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+)
+
+const (
+	vtslsServerName              = "vtsls"
+	typescriptLanguageServerName = "typescript-language-server"
 )
 
 // LspInstaller handles installation and version management of language servers
@@ -85,10 +91,10 @@ func (i *TypeScriptLspInstaller) CheckIfUserInstalled(
 
 	switch i.serverType {
 	case ServerTypeVTSLS:
-		command = "vtsls"
+		command = vtslsServerName
 		args = []string{"--stdio"}
 	case ServerTypeTypeScriptLanguageServer:
-		command = "typescript-language-server"
+		command = typescriptLanguageServerName
 		args = []string{"--stdio"}
 	default:
 		return nil, fmt.Errorf("unsupported server type")
@@ -117,7 +123,7 @@ func (i *TypeScriptLspInstaller) FetchLatestServerVersion(
 	case ServerTypeVTSLS:
 		packageName = "@vtsls/language-server"
 	case ServerTypeTypeScriptLanguageServer:
-		packageName = "typescript-language-server"
+		packageName = typescriptLanguageServerName
 	default:
 		return "", fmt.Errorf("unsupported server type")
 	}
@@ -133,7 +139,11 @@ func (i *TypeScriptLspInstaller) FetchLatestServerVersion(
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to fetch package info: %s", resp.Status)
@@ -257,9 +267,9 @@ func (i *TypeScriptLspInstaller) GetInstallationInfo() InstallationInfo {
 func (i *TypeScriptLspInstaller) getServerName() string {
 	switch i.serverType {
 	case ServerTypeVTSLS:
-		return "vtsls"
+		return vtslsServerName
 	case ServerTypeTypeScriptLanguageServer:
-		return "typescript-language-server"
+		return typescriptLanguageServerName
 	default:
 		return "unknown"
 	}
@@ -319,14 +329,17 @@ func (i *TypeScriptLspInstaller) installToDirectory(
 		}
 	case ServerTypeTypeScriptLanguageServer:
 		if version != "" {
-			packageName = fmt.Sprintf("typescript-language-server@%s", version)
+			packageName = fmt.Sprintf("%s@%s", typescriptLanguageServerName, version)
 		} else {
-			packageName = "typescript-language-server"
+			packageName = typescriptLanguageServerName
 		}
 		// Also install TypeScript as dependency
 		defer func() {
-			cmd := exec.CommandContext(ctx, "npm", "install", "typescript", "--prefix", installDir)
-			cmd.Run() // Ignore errors for TypeScript installation
+			cmd := exec.CommandContext(ctx, "npm", "install", "typescript", "--prefix", ".")
+			cmd.Dir = installDir
+			if err := cmd.Run(); err != nil {
+				log.Printf("Failed to install TypeScript dependency: %v", err)
+			}
 		}()
 	default:
 		return fmt.Errorf("unsupported server type")
@@ -502,7 +515,9 @@ func (m *InstallationManager) CleanupServer(serverName string, keepVersions int)
 	// Keep the latest N versions, remove the rest
 	for i := 0; i < len(versions)-keepVersions; i++ {
 		versionDir := filepath.Join(serverDir, versions[i])
-		os.RemoveAll(versionDir)
+		if err := os.RemoveAll(versionDir); err != nil {
+			log.Printf("Failed to remove old version directory %s: %v", versionDir, err)
+		}
 	}
 
 	return nil

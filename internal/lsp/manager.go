@@ -181,7 +181,7 @@ func (m *LanguageServerManager) GetRegisteredAdapters() []AdapterInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var adapters []AdapterInfo
+	adapters := make([]AdapterInfo, 0, len(m.adapters))
 	for language, adapter := range m.adapters {
 		adapters = append(adapters, AdapterInfo{
 			Language:    language,

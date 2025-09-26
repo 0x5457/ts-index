@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+const (
+	nullResponseString = "null"
+	typescriptLangName = "typescript"
+)
+
 // LSPClient implements a Language Server Protocol client
 type LSPClient struct {
 	cmd       *exec.Cmd
@@ -129,7 +134,9 @@ func (c *LSPClient) Start(ctx context.Context, workspaceRoot string) error {
 
 	// Initialize the server
 	if err := c.initialize(ctx); err != nil {
-		c.Stop()
+		if stopErr := c.Stop(); stopErr != nil {
+			log.Printf("Failed to stop language server during cleanup: %v", stopErr)
+		}
 		return fmt.Errorf("failed to initialize language server: %w", err)
 	}
 
@@ -153,23 +160,35 @@ func (c *LSPClient) Stop() error {
 	atomic.StoreInt32(&c.running, 0)
 
 	// Send shutdown request
-	c.sendNotification("shutdown", nil)
-	c.sendNotification("exit", nil)
+	if err := c.sendNotification("shutdown", nil); err != nil {
+		log.Printf("Failed to send shutdown notification: %v", err)
+	}
+	if err := c.sendNotification("exit", nil); err != nil {
+		log.Printf("Failed to send exit notification: %v", err)
+	}
 
 	// Close pipes
 	if c.stdin != nil {
-		c.stdin.Close()
+		if err := c.stdin.Close(); err != nil {
+			log.Printf("Failed to close stdin: %v", err)
+		}
 	}
 	if c.stdout != nil {
-		c.stdout.Close()
+		if err := c.stdout.Close(); err != nil {
+			log.Printf("Failed to close stdout: %v", err)
+		}
 	}
 	if c.stderr != nil {
-		c.stderr.Close()
+		if err := c.stderr.Close(); err != nil {
+			log.Printf("Failed to close stderr: %v", err)
+		}
 	}
 
 	// Wait for process to exit
 	if c.cmd != nil && c.cmd.Process != nil {
-		c.cmd.Wait()
+		if err := c.cmd.Wait(); err != nil {
+			log.Printf("Language server process exited with error: %v", err)
+		}
 	}
 
 	return nil
@@ -388,7 +407,7 @@ func (c *LSPClient) Hover(ctx context.Context, params TextDocumentPositionParams
 		return nil, err
 	}
 
-	if len(response) == 0 || string(response) == "null" {
+	if len(response) == 0 || string(response) == nullResponseString {
 		return nil, nil
 	}
 
@@ -410,7 +429,7 @@ func (c *LSPClient) Completion(
 		return nil, err
 	}
 
-	if len(response) == 0 || string(response) == "null" {
+	if len(response) == 0 || string(response) == nullResponseString {
 		return &CompletionList{IsIncomplete: false, Items: []CompletionItem{}}, nil
 	}
 
@@ -442,7 +461,7 @@ func (c *LSPClient) GotoDefinition(
 		return nil, err
 	}
 
-	if len(response) == 0 || string(response) == "null" {
+	if len(response) == 0 || string(response) == nullResponseString {
 		return []Location{}, nil
 	}
 
@@ -485,7 +504,7 @@ func (c *LSPClient) FindReferences(
 		return nil, err
 	}
 
-	if len(response) == 0 || string(response) == "null" {
+	if len(response) == 0 || string(response) == nullResponseString {
 		return []Location{}, nil
 	}
 
@@ -507,7 +526,7 @@ func (c *LSPClient) WorkspaceSymbols(
 		return nil, err
 	}
 
-	if len(response) == 0 || string(response) == "null" {
+	if len(response) == 0 || string(response) == nullResponseString {
 		return []SymbolInformation{}, nil
 	}
 
@@ -532,7 +551,7 @@ func (c *LSPClient) DocumentSymbols(ctx context.Context, uri string) ([]SymbolIn
 		return nil, err
 	}
 
-	if len(response) == 0 || string(response) == "null" {
+	if len(response) == 0 || string(response) == nullResponseString {
 		return []SymbolInformation{}, nil
 	}
 
@@ -630,7 +649,7 @@ func (c *LSPClient) DidClose(ctx context.Context, uri string) error {
 func (c *LSPClient) getLanguageID(uri string) string {
 	path := URIToPath(uri)
 	if strings.HasSuffix(path, ".ts") {
-		return "typescript"
+		return typescriptLangName
 	}
 	if strings.HasSuffix(path, ".tsx") {
 		return "typescriptreact"
@@ -641,5 +660,5 @@ func (c *LSPClient) getLanguageID(uri string) string {
 	if strings.HasSuffix(path, ".jsx") {
 		return "javascriptreact"
 	}
-	return "typescript" // default
+	return typescriptLangName // default
 }

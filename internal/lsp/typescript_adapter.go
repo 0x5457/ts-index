@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 )
 
+const (
+	tsLanguageServerNotInstalledMsg = "typescript-language-server is not installed. Use 'ts-index lsp install typescript-language-server'"
+)
+
 // IsVTSLSInstalled checks if vtsls is installed and available
 func IsVTSLSInstalled() bool {
 	_, err := exec.LookPath("vtsls")
@@ -80,21 +84,21 @@ func (a *TypeScriptLspAdapter) Name() string {
 	case ServerTypeTypeScriptLanguageServer:
 		return "typescript-language-server"
 	default:
-		return "typescript"
+		return typescriptLangName
 	}
 }
 
 // LanguageIds implements LspAdapter.LanguageIds
 func (a *TypeScriptLspAdapter) LanguageIds() map[string]string {
 	return map[string]string{
-		"typescript":      "typescript",
-		"javascript":      "javascript",
-		"typescriptreact": "typescriptreact",
-		"javascriptreact": "javascriptreact",
-		"tsx":             "typescriptreact",
-		"jsx":             "javascriptreact",
-		"ts":              "typescript",
-		"js":              "javascript",
+		typescriptLangName: typescriptLangName,
+		"javascript":       "javascript",
+		"typescriptreact":  "typescriptreact",
+		"javascriptreact":  "javascriptreact",
+		"tsx":              "typescriptreact",
+		"jsx":              "javascriptreact",
+		"ts":               typescriptLangName,
+		"js":               "javascript",
 	}
 }
 
@@ -125,7 +129,8 @@ func (a *TypeScriptLspAdapter) ServerCommand(workspaceRoot string) (string, []st
 			return "typescript-language-server", []string{"--stdio"}, nil
 		}
 		return "", nil, fmt.Errorf(
-			"typescript-language-server is not installed. Use 'ts-index lsp install typescript-language-server' or install globally with: %s",
+			"%s or install globally with: %s",
+			tsLanguageServerNotInstalledMsg,
 			InstallTypeScriptLanguageServerCommand(),
 		)
 
@@ -296,6 +301,8 @@ func shouldIncludeDiagnostic(diag Diagnostic) bool {
 		if source == "ts" {
 			// Skip certain TypeScript diagnostics that are too noisy
 			// This is where you'd implement custom filtering logic
+			// For now, we include all TypeScript diagnostics
+			return true
 		}
 	}
 	return true

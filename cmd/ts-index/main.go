@@ -159,7 +159,7 @@ func main() {
 	searchCmd.Flags().BoolVar(&symbol, "symbol", false, "Use exact symbol name search")
 	searchCmd.Flags().StringVar(&embUrl, "embed-url", embUrl, "Embedding API URL")
 
-	// LSP commands
+	// LSP commands  
 	lspCmd := &cobra.Command{
 		Use:   "lsp",
 		Short: "Language Server Protocol commands",
@@ -171,7 +171,11 @@ func main() {
 		Short: "Show LSP server information",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientTools := lsp.NewClientTools()
-			defer clientTools.Cleanup()
+			defer func() {
+				if err := clientTools.Cleanup(); err != nil {
+					log.Printf("Failed to cleanup client tools: %v", err)
+				}
+			}()
 
 			fmt.Println("Registered Language Server Adapters:")
 			adapters := clientTools.GetAdapterInfo()
@@ -215,7 +219,11 @@ func main() {
 			}
 
 			clientTools := lsp.NewClientTools()
-			defer clientTools.Cleanup()
+			defer func() {
+				if err := clientTools.Cleanup(); err != nil {
+					log.Printf("Failed to cleanup client tools: %v", err)
+				}
+			}()
 
 			req := lsp.AnalyzeSymbolRequest{
 				WorkspaceRoot: project,
@@ -258,7 +266,11 @@ func main() {
 			}
 
 			clientTools := lsp.NewClientTools()
-			defer clientTools.Cleanup()
+			defer func() {
+				if err := clientTools.Cleanup(); err != nil {
+					log.Printf("Failed to cleanup client tools: %v", err)
+				}
+			}()
 
 			req := lsp.CompletionRequest{
 				WorkspaceRoot: project,
@@ -299,7 +311,11 @@ func main() {
 			}
 
 			clientTools := lsp.NewClientTools()
-			defer clientTools.Cleanup()
+			defer func() {
+				if err := clientTools.Cleanup(); err != nil {
+					log.Printf("Failed to cleanup client tools: %v", err)
+				}
+			}()
 
 			req := lsp.SymbolSearchRequest{
 				WorkspaceRoot: project,
@@ -356,12 +372,7 @@ func main() {
 			}
 			fmt.Printf("...\n")
 
-			binary, err := installManager.InstallServer(
-				cmd.Context(),
-				serverName,
-				installVersion,
-				delegate,
-			)
+			binary, err := installManager.InstallServer(cmd.Context(), serverName, installVersion, delegate)
 			if err != nil {
 				return fmt.Errorf("installation failed: %v", err)
 			}
@@ -374,8 +385,7 @@ func main() {
 		},
 	}
 	lspInstallCmd.Flags().StringVar(&installVersion, "version", "", "Specific version to install")
-	lspInstallCmd.Flags().
-		StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
+	lspInstallCmd.Flags().StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
 
 	// LSP list command
 	lspListCmd := &cobra.Command{
@@ -413,8 +423,7 @@ func main() {
 			return nil
 		},
 	}
-	lspListCmd.Flags().
-		StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
+	lspListCmd.Flags().StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
 
 	// LSP health command
 	lspHealthCmd := &cobra.Command{
@@ -460,18 +469,9 @@ func main() {
 			return nil
 		},
 	}
-	lspHealthCmd.Flags().
-		StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
+	lspHealthCmd.Flags().StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
 
-	lspCmd.AddCommand(
-		lspInfoCmd,
-		lspAnalyzeCmd,
-		lspCompletionCmd,
-		lspSymbolCmd,
-		lspInstallCmd,
-		lspListCmd,
-		lspHealthCmd,
-	)
+	lspCmd.AddCommand(lspInfoCmd, lspAnalyzeCmd, lspCompletionCmd, lspSymbolCmd, lspInstallCmd, lspListCmd, lspHealthCmd)
 	rootCmd.AddCommand(indexCmd, searchCmd, lspCmd)
 
 	if err := rootCmd.Execute(); err != nil {
