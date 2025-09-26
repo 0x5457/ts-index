@@ -3,9 +3,9 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/0x5457/ts-index/internal/lsp"
+	mcpclient "github.com/0x5457/ts-index/internal/mcp"
 	"github.com/spf13/cobra"
 )
 
@@ -33,33 +33,17 @@ func newLSPInfoCommand() *cobra.Command {
 		Use:   "info",
 		Short: "Show LSP server information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clientTools := lsp.NewClientTools()
-			defer func() {
-				if err := clientTools.Cleanup(); err != nil {
-					log.Printf("Failed to cleanup client tools: %v", err)
-				}
-			}()
-
-			fmt.Println("Registered Language Server Adapters:")
-			adapters := clientTools.GetAdapterInfo()
-			for _, adapter := range adapters {
-				status := "❌ Not Installed"
-				if adapter.IsInstalled {
-					status = "✅ Installed"
-				}
-				fmt.Printf("  %s (%s): %s\n", adapter.Language, adapter.Name, status)
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
+			if err != nil {
+				return err
 			}
-
-			fmt.Println("\nRunning Language Servers:")
-			servers := clientTools.GetServerInfo()
-			if len(servers) == 0 {
-				fmt.Println("  None")
-			} else {
-				for _, server := range servers {
-					fmt.Printf("  %s: %s (%s)\n", server.Name, server.WorkspaceRoot, server.AdapterName)
-				}
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_info", nil)
+			if err != nil {
+				return err
 			}
-
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
 			return nil
 		},
 	}
@@ -84,31 +68,24 @@ func newLSPAnalyzeCommand() *cobra.Command {
 				return fmt.Errorf("--project is required")
 			}
 
-			clientTools := lsp.NewClientTools()
-			defer func() {
-				if err := clientTools.Cleanup(); err != nil {
-					log.Printf("Failed to cleanup client tools: %v", err)
-				}
-			}()
-
-			req := lsp.AnalyzeSymbolRequest{
-				WorkspaceRoot: project,
-				FilePath:      args[0],
-				Line:          lspLine,
-				Character:     lspCharacter,
-				IncludeHover:  includeHover,
-				IncludeRefs:   includeRefs,
-				IncludeDefs:   includeDefs,
-			}
-
-			result := clientTools.AnalyzeSymbol(cmd.Context(), req)
-
-			// Convert to JSON for output
-			data, err := json.MarshalIndent(result, "", "  ")
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
-
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_analyze", map[string]any{
+				"project":   project,
+				"file":      args[0],
+				"line":      lspLine,
+				"character": lspCharacter,
+				"hover":     includeHover,
+				"refs":      includeRefs,
+				"defs":      includeDefs,
+			})
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
 			fmt.Println(string(data))
 			return nil
 		},
@@ -141,29 +118,22 @@ func newLSPCompletionCommand() *cobra.Command {
 				return fmt.Errorf("--project is required")
 			}
 
-			clientTools := lsp.NewClientTools()
-			defer func() {
-				if err := clientTools.Cleanup(); err != nil {
-					log.Printf("Failed to cleanup client tools: %v", err)
-				}
-			}()
-
-			req := lsp.CompletionRequest{
-				WorkspaceRoot: project,
-				FilePath:      args[0],
-				Line:          lspLine,
-				Character:     lspCharacter,
-				MaxResults:    maxResults,
-			}
-
-			result := clientTools.GetCompletion(cmd.Context(), req)
-
-			// Convert to JSON for output
-			data, err := json.MarshalIndent(result, "", "  ")
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
-
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_completion", map[string]any{
+				"project":     project,
+				"file":        args[0],
+				"line":        lspLine,
+				"character":   lspCharacter,
+				"max_results": maxResults,
+			})
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
 			fmt.Println(string(data))
 			return nil
 		},
@@ -195,27 +165,20 @@ func newLSPSymbolCommand() *cobra.Command {
 				return fmt.Errorf("--query is required")
 			}
 
-			clientTools := lsp.NewClientTools()
-			defer func() {
-				if err := clientTools.Cleanup(); err != nil {
-					log.Printf("Failed to cleanup client tools: %v", err)
-				}
-			}()
-
-			req := lsp.SymbolSearchRequest{
-				WorkspaceRoot: project,
-				Query:         query,
-				MaxResults:    maxResults,
-			}
-
-			result := clientTools.SearchSymbols(cmd.Context(), req)
-
-			// Convert to JSON for output
-			data, err := json.MarshalIndent(result, "", "  ")
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
-
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_symbols", map[string]any{
+				"project":     project,
+				"query":       query,
+				"max_results": maxResults,
+			})
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
 			fmt.Println(string(data))
 			return nil
 		},
@@ -294,34 +257,17 @@ func newLSPListCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List installed language servers",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var installManager *lsp.InstallationManager
-			if installDir != "" {
-				installManager = lsp.NewInstallationManager(installDir)
-			} else {
-				installManager = lsp.NewInstallationManager("")
-			}
-
-			delegate := &lsp.SimpleDelegate{}
-			servers, err := installManager.GetInstalledServers(delegate)
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
-
-			if len(servers) == 0 {
-				fmt.Println("No language servers installed locally")
-				fmt.Println("Use 'ts-index lsp install' to install a language server")
-				return nil
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_list", map[string]any{"dir": installDir})
+			if err != nil {
+				return err
 			}
-
-			fmt.Println("Installed Language Servers:")
-			for _, server := range servers {
-				fmt.Printf("  %s:\n", server.Name)
-				for _, version := range server.Versions {
-					fmt.Printf("    - %s\n", version)
-				}
-				fmt.Printf("    Path: %s\n", server.Path)
-			}
-
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
 			return nil
 		},
 	}
@@ -339,42 +285,17 @@ func newLSPHealthCommand() *cobra.Command {
 		Use:   "health",
 		Short: "Check LSP health and language server availability",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("System-wide installations:")
-			if lsp.IsVTSLSInstalled() {
-				fmt.Println("  ✓ vtsls is installed and available")
-			} else {
-				fmt.Println("  ✗ vtsls is not installed")
-				fmt.Printf("    Install globally with: %s\n", lsp.InstallVTSLSCommand())
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
+			if err != nil {
+				return err
 			}
-
-			if lsp.IsTypeScriptLanguageServerInstalled() {
-				fmt.Println("  ✓ typescript-language-server is installed and available")
-			} else {
-				fmt.Println("  ✗ typescript-language-server is not installed")
-				fmt.Printf("    Install globally with: %s\n", lsp.InstallTypeScriptLanguageServerCommand())
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), "lsp_health", map[string]any{"dir": installDir})
+			if err != nil {
+				return err
 			}
-
-			// Check local installations
-			var installManager *lsp.InstallationManager
-			if installDir != "" {
-				installManager = lsp.NewInstallationManager(installDir)
-			} else {
-				installManager = lsp.NewInstallationManager("")
-			}
-
-			delegate := &lsp.SimpleDelegate{}
-			servers, err := installManager.GetInstalledServers(delegate)
-			if err == nil && len(servers) > 0 {
-				fmt.Println("\nLocal installations:")
-				for _, server := range servers {
-					fmt.Printf("  ✓ %s (versions: %v)\n", server.Name, server.Versions)
-				}
-			} else {
-				fmt.Println("\nLocal installations:")
-				fmt.Println("  None found")
-				fmt.Println("  Use 'ts-index lsp install' to install language servers locally")
-			}
-
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
 			return nil
 		},
 	}
