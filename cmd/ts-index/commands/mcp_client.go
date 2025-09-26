@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -85,7 +86,12 @@ Example:
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			client, err := createMCPClient(ctx, transport, address)
+			config := appmcp.ServerConfig{
+				Project:  project,
+				DB:       db,
+				EmbedURL: embedURL,
+			}
+			client, err := createMCPClient(ctx, transport, address, config)
 			if err != nil {
 				return fmt.Errorf("create MCP client failed: %w", err)
 			}
@@ -125,12 +131,14 @@ func newMCPListToolsCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list-tools",
-		Short: "List available MCP tools using standard MCP protocol",
+		Short: "List available MCP tools",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			client, err := createMCPClient(ctx, transport, address)
+			// Use minimal config for list-tools
+			config := appmcp.ServerConfig{}
+			client, err := createMCPClient(ctx, transport, address, config)
 			if err != nil {
 				return fmt.Errorf("create MCP client failed: %w", err)
 			}
@@ -158,7 +166,7 @@ func newMCPListToolsCommand() *cobra.Command {
 					fmt.Printf("   Parameters:\n")
 					for name, prop := range tool.InputSchema.Properties {
 						required := ""
-						if contains(tool.InputSchema.Required, name) {
+						if slices.Contains(tool.InputSchema.Required, name) {
 							required = " (required)"
 						}
 						if propMap, ok := prop.(map[string]any); ok {
@@ -206,7 +214,12 @@ func newMCPSearchCommand() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			client, err := createMCPClient(ctx, transport, address)
+			config := appmcp.ServerConfig{
+				Project:  project,
+				DB:       db,
+				EmbedURL: embedURL,
+			}
+			client, err := createMCPClient(ctx, transport, address, config)
 			if err != nil {
 				return fmt.Errorf("create MCP client failed: %w", err)
 			}
@@ -271,7 +284,9 @@ func newMCPLSPCommand() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			client, err := createMCPClient(ctx, transport, address)
+			// Use minimal config for lsp info
+			config := appmcp.ServerConfig{}
+			client, err := createMCPClient(ctx, transport, address, config)
 			if err != nil {
 				return fmt.Errorf("create MCP client failed: %w", err)
 			}
@@ -309,7 +324,10 @@ func newMCPLSPCommand() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			client, err := createMCPClient(ctx, transport, address)
+			config := appmcp.ServerConfig{
+				Project: project,
+			}
+			client, err := createMCPClient(ctx, transport, address, config)
 			if err != nil {
 				return fmt.Errorf("create MCP client failed: %w", err)
 			}
@@ -349,24 +367,19 @@ func newMCPLSPCommand() *cobra.Command {
 	return cmd
 }
 
-func createMCPClient(ctx context.Context, transport, _address string) (*appmcp.Client, error) {
+func createMCPClient(
+	ctx context.Context,
+	transport, _address string,
+	config appmcp.ServerConfig,
+) (*appmcp.Client, error) {
 	switch transport {
 	case "stdio":
-		return appmcp.NewStdioClient(ctx)
+		return appmcp.NewStdioClientWithConfig(ctx, config)
 	default:
 		return nil, fmt.Errorf(
-			"only stdio transport is supported, other transports (%s) are not implemented",
+			"only stdio transport is supported,"+
+				" other transports (%s) are not implemented",
 			transport,
 		)
 	}
-}
-
-// Helper function to check if slice contains string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }

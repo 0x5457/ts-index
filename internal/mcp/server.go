@@ -3,7 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log"
+	"os"
 
 	"github.com/0x5457/ts-index/internal/embeddings"
 	"github.com/0x5457/ts-index/internal/factory"
@@ -58,7 +58,7 @@ func NewWithOptions(opts ServerOptions) *server.MCPServer {
 	// Initialize shared components if DB is configured
 	if opts.DB != "" {
 		if err := srv.initComponents(); err != nil {
-			log.Printf("initialize components failed: %v", err)
+			fmt.Fprintf(os.Stderr, "initialize components failed: %v\n", err)
 		}
 	}
 
@@ -76,11 +76,11 @@ func NewWithOptions(opts ServerOptions) *server.MCPServer {
 
 	// Pre-index project if specified
 	if opts.Project != "" {
-		log.Printf("pre-index project: %s", opts.Project)
+		fmt.Fprintf(os.Stderr, "pre-index project: %s\n", opts.Project)
 		if err := srv.preIndexProject(); err != nil {
-			log.Printf("pre-index failed: %v", err)
+			fmt.Fprintf(os.Stderr, "pre-index failed: %v\n", err)
 		} else {
-			log.Printf("pre-index completed")
+			fmt.Fprintf(os.Stderr, "pre-index completed\n")
 		}
 	}
 
