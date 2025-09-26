@@ -11,13 +11,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// ServerOptions contains configuration for the MCP server
-type ServerOptions struct {
-	Project  string // Project path to pre-index
-	DB       string // SQLite database path
-	EmbedURL string // Embedding API URL
-}
-
 // Server wraps an MCP server with direct interface dependencies
 type Server struct {
 	server        *server.MCPServer

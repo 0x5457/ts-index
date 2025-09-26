@@ -11,6 +11,12 @@ A powerful TypeScript code indexing and search tool with Language Server Protoco
 - **Vector Database**: SQLite-based storage with vector search capabilities
 - **Multiple Transports**: Support for stdio, HTTP, and SSE communication protocols
 
+## Technology Stack
+
+- **TypeScript Parser**: [tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript) - TypeScript and TSX grammars for tree-sitter
+- **Language Server**: [yioneko/vtsls](https://github.com/yioneko/vtsls) / [typescript-language-server](https://github.com/typescript-language-server/typescript-language-server) - LSP wrapper for TypeScript
+- **Vector Database**: [asg017/sqlite-vec](https://github.com/asg017/sqlite-vec) - Vector search extension for SQLite
+
 ## Usage
 
 ### Index a TypeScript project
@@ -65,31 +71,14 @@ ts-index mcp --transport sse --address :8080 --db /path/to/index.db
 
 ## Development
 
-### Prerequisites
-
-- Go 1.24.5 or later
-- Make
-
 ### Commands
 
 ```bash
-# Download dependencies
-make deps
-
-# Run tests
-make test
-
 # Run linter
 make lint
 
 # Run linter with auto-fix
 make lint-fix
-
-# Clean build artifacts
-make clean
-
-# Show all available commands
-make help
 ```
 
 ### Building
