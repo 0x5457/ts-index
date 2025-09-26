@@ -65,11 +65,11 @@ func TestSSETransport(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
-    cliTr, err := transport.NewSSE(ts.URL + "/mcp/sse")
+	cliTr, err := transport.NewSSE(ts.URL + "/mcp/sse")
 	if err != nil {
 		t.Fatalf("new sse: %v", err)
 	}
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	cli := client.NewClient(cliTr)
 	if err := cli.Start(ctx); err != nil {
