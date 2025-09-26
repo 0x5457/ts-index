@@ -1,12 +1,12 @@
 package commands
 
 import (
-    "encoding/json"
-    "fmt"
+	"encoding/json"
+	"fmt"
 
-    "github.com/0x5457/ts-index/internal/lsp"
-    mcpclient "github.com/0x5457/ts-index/internal/mcp"
-    "github.com/spf13/cobra"
+	"github.com/0x5457/ts-index/internal/lsp"
+	mcpclient "github.com/0x5457/ts-index/internal/mcp"
+	"github.com/spf13/cobra"
 )
 
 func NewLSPCommand() *cobra.Command {
@@ -34,7 +34,7 @@ func newLSPInfoCommand() *cobra.Command {
 		Use:   "info",
 		Short: "Show LSP server information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -69,7 +69,7 @@ func newLSPAnalyzeCommand() *cobra.Command {
 				return fmt.Errorf("--project is required")
 			}
 
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -119,7 +119,7 @@ func newLSPCompletionCommand() *cobra.Command {
 				return fmt.Errorf("--project is required")
 			}
 
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -166,7 +166,7 @@ func newLSPSymbolCommand() *cobra.Command {
 				return fmt.Errorf("--query is required")
 			}
 
-            cli, err := mcpclient.NewStdioClient(cmd.Context())
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
 			if err != nil {
 				return err
 			}

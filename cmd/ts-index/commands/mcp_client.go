@@ -14,7 +14,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewMCPClientCommand creates commands for interacting with MCP servers
+const (
+	transportStdio  = "stdio"
+	transportHTTP   = "http"
+	transportSSE    = "sse"
+	transportInproc = "inproc"
+)
+
+// NewMCPClientCommand creates commands for connecting to and interacting with MCP servers
 func NewMCPClientCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp-client",
@@ -116,9 +123,10 @@ Example:
 	cmd.Flags().StringVarP(&db, "db", "d", "", "SQLite database path")
 	cmd.Flags().
 		StringVar(&embedURL, "embed-url", "http://localhost:8000/embed", "embed API address")
-    cmd.Flags().
-        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
-    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
+	cmd.Flags().
+		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
+	cmd.Flags().
+		StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -187,9 +195,10 @@ func newMCPListToolsCommand() *cobra.Command {
 		},
 	}
 
-    cmd.Flags().
-        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
-    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
+	cmd.Flags().
+		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
+	cmd.Flags().
+		StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -258,9 +267,10 @@ func newMCPSearchCommand() *cobra.Command {
 	cmd.Flags().
 		StringVar(&embedURL, "embed-url", "http://localhost:8000/embed", "embed API address")
 	cmd.Flags().IntVarP(&topK, "top-k", "k", 5, "number of results")
-    cmd.Flags().
-        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
-    cmd.Flags().StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
+	cmd.Flags().
+		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
+	cmd.Flags().
+		StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -359,10 +369,10 @@ func newMCPLSPCommand() *cobra.Command {
 	cmd.AddCommand(infoCmd, analyzeCmd)
 
 	cmd.PersistentFlags().StringVarP(&project, "project", "p", "", "project path")
-    cmd.PersistentFlags().
-        StringVarP(&transport, "transport", "t", "stdio", "transport (stdio, http, sse, inproc)")
-    cmd.PersistentFlags().
-        StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
+	cmd.PersistentFlags().
+		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
+	cmd.PersistentFlags().
+		StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
 
 	return cmd
 }
@@ -373,21 +383,24 @@ func createMCPClient(
 	config appmcp.ServerConfig,
 ) (*appmcp.Client, error) {
 	switch transport {
-	case "stdio":
+	case transportStdio:
 		return appmcp.NewStdioClientWithConfig(ctx, config)
-    case "http":
-        if _address == "" {
-            _address = "http://127.0.0.1:8080/mcp"
-        }
-        return appmcp.NewHTTPClient(ctx, _address)
-    case "sse":
-        if _address == "" {
-            _address = "http://127.0.0.1:8080/mcp/sse"
-        }
-        return appmcp.NewSSEClient(ctx, _address)
-    case "inproc":
-        return appmcp.NewInProcessClient(ctx, config)
+	case transportHTTP:
+		if _address == "" {
+			_address = "http://127.0.0.1:8080/mcp"
+		}
+		return appmcp.NewHTTPClient(ctx, _address)
+	case transportSSE:
+		if _address == "" {
+			_address = "http://127.0.0.1:8080/mcp/sse"
+		}
+		return appmcp.NewSSEClient(ctx, _address)
+	case transportInproc:
+		return appmcp.NewInProcessClient(ctx, config)
 	default:
-        return nil, fmt.Errorf("unsupported transport: %s (supported: stdio, http, sse, inproc)", transport)
+		return nil, fmt.Errorf(
+			"unsupported transport: %s (supported: stdio, http, sse, inproc)",
+			transport,
+		)
 	}
 }
