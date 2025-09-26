@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 )
 
-// LanguageServer represents the interface for language server implementations
+// LanguageServerInterface represents the interface for language server implementations
 // Inspired by Zed's LanguageServer trait design
-type LanguageServer interface {
+type LanguageServerInterface interface {
 	// Start initializes and starts the language server
 	Start(ctx context.Context, workspaceRoot string) error
 	
@@ -69,7 +69,7 @@ type LanguageServerConfig struct {
 // LanguageServerFactory creates language servers for specific languages
 type LanguageServerFactory interface {
 	// CreateLanguageServer creates a new language server instance
-	CreateLanguageServer(config LanguageServerConfig) (LanguageServer, error)
+	CreateLanguageServer(config LanguageServerConfig) (LanguageServerInterface, error)
 	
 	// SupportedLanguages returns the list of supported languages
 	SupportedLanguages() []string

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -165,24 +165,37 @@ func main() {
 		Short: "Language Server Protocol commands",
 	}
 
-	// LSP server command
-	var port int
-	lspServerCmd := &cobra.Command{
-		Use:   "server",
-		Short: "Start LSP HTTP server",
+	// LSP info command
+	lspInfoCmd := &cobra.Command{
+		Use:   "info",
+		Short: "Show LSP server information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lspService := lsp.NewLSPService()
-			defer lspService.Cleanup()
+			clientTools := lsp.NewClientTools()
+			defer clientTools.Cleanup()
 
-			mux := http.NewServeMux()
-			lspService.RegisterHandlers(mux)
+			fmt.Println("Registered Language Server Adapters:")
+			adapters := clientTools.GetAdapterInfo()
+			for _, adapter := range adapters {
+				status := "❌ Not Installed"
+				if adapter.IsInstalled {
+					status = "✅ Installed"
+				}
+				fmt.Printf("  %s (%s): %s\n", adapter.Language, adapter.Name, status)
+			}
 
-			addr := fmt.Sprintf(":%d", port)
-			log.Printf("Starting LSP server on %s", addr)
-			return http.ListenAndServe(addr, mux)
+			fmt.Println("\nRunning Language Servers:")
+			servers := clientTools.GetServerInfo()
+			if len(servers) == 0 {
+				fmt.Println("  None")
+			} else {
+				for _, server := range servers {
+					fmt.Printf("  %s: %s (%s)\n", server.Name, server.WorkspaceRoot, server.AdapterName)
+				}
+			}
+
+			return nil
 		},
 	}
-	lspServerCmd.Flags().IntVar(&port, "port", 8080, "Server port")
 
 	// LSP analyze command
 	var (
@@ -201,24 +214,28 @@ func main() {
 				return fmt.Errorf("--project is required")
 			}
 
-			lspCommand := lsp.NewLSPCommand()
-			defer lspCommand.Cleanup()
+			clientTools := lsp.NewClientTools()
+			defer clientTools.Cleanup()
 
-			result, err := lspCommand.AnalyzeSymbolJSON(
-				cmd.Context(),
-				project,
-				args[0],
-				lspLine,
-				lspCharacter,
-				includeHover,
-				includeRefs,
-				includeDefs,
-			)
+			req := lsp.AnalyzeSymbolRequest{
+				WorkspaceRoot: project,
+				FilePath:      args[0],
+				Line:          lspLine,
+				Character:     lspCharacter,
+				IncludeHover:  includeHover,
+				IncludeRefs:   includeRefs,
+				IncludeDefs:   includeDefs,
+			}
+
+			result := clientTools.AnalyzeSymbol(cmd.Context(), req)
+			
+			// Convert to JSON for output
+			data, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return err
 			}
-
-			fmt.Println(result)
+			
+			fmt.Println(string(data))
 			return nil
 		},
 	}
@@ -240,22 +257,26 @@ func main() {
 				return fmt.Errorf("--project is required")
 			}
 
-			lspCommand := lsp.NewLSPCommand()
-			defer lspCommand.Cleanup()
+			clientTools := lsp.NewClientTools()
+			defer clientTools.Cleanup()
 
-			result, err := lspCommand.GetCompletionJSON(
-				cmd.Context(),
-				project,
-				args[0],
-				lspLine,
-				lspCharacter,
-				maxResults,
-			)
+			req := lsp.CompletionRequest{
+				WorkspaceRoot: project,
+				FilePath:      args[0],
+				Line:          lspLine,
+				Character:     lspCharacter,
+				MaxResults:    maxResults,
+			}
+
+			result := clientTools.GetCompletion(cmd.Context(), req)
+			
+			// Convert to JSON for output
+			data, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return err
 			}
-
-			fmt.Println(result)
+			
+			fmt.Println(string(data))
 			return nil
 		},
 	}
@@ -277,20 +298,24 @@ func main() {
 				return fmt.Errorf("--query is required")
 			}
 
-			lspCommand := lsp.NewLSPCommand()
-			defer lspCommand.Cleanup()
+			clientTools := lsp.NewClientTools()
+			defer clientTools.Cleanup()
 
-			result, err := lspCommand.SearchSymbolsJSON(
-				cmd.Context(),
-				project,
-				query,
-				maxResults,
-			)
+			req := lsp.SymbolSearchRequest{
+				WorkspaceRoot: project,
+				Query:         query,
+				MaxResults:    maxResults,
+			}
+
+			result := clientTools.SearchSymbols(cmd.Context(), req)
+			
+			// Convert to JSON for output
+			data, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return err
 			}
-
-			fmt.Println(result)
+			
+			fmt.Println(string(data))
 			return nil
 		},
 	}
@@ -326,7 +351,7 @@ func main() {
 		},
 	}
 
-	lspCmd.AddCommand(lspServerCmd, lspAnalyzeCmd, lspCompletionCmd, lspSymbolCmd, lspHealthCmd)
+	lspCmd.AddCommand(lspInfoCmd, lspAnalyzeCmd, lspCompletionCmd, lspSymbolCmd, lspHealthCmd)
 	rootCmd.AddCommand(indexCmd, searchCmd, lspCmd)
 
 	if err := rootCmd.Execute(); err != nil {
