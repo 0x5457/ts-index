@@ -9,9 +9,8 @@ import (
 // NewMCPServeCommand starts an MCP stdio server that exposes search and LSP tools.
 func NewMCPServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "serve-mcp",
-		Short:  "Run MCP stdio server (experimental)",
-		Hidden: true,
+		Use:   "mcp",
+		Short: "Run MCP stdio server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s := appmcp.New()
 			return server.ServeStdio(s)
