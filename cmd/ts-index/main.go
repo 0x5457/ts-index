@@ -323,35 +323,139 @@ func main() {
 	lspSymbolCmd.Flags().StringVar(&query, "query", "", "Search query")
 	lspSymbolCmd.Flags().IntVar(&maxResults, "max-results", 50, "Maximum number of results")
 
-	// LSP health command
-	lspHealthCmd := &cobra.Command{
-		Use:   "health",
-		Short: "Check LSP health and language server availability",
+	// LSP install command
+	var (
+		installVersion string
+		installDir     string
+	)
+	lspInstallCmd := &cobra.Command{
+		Use:   "install [server-name]",
+		Short: "Install a language server to local directory",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if lsp.IsVTSLSInstalled() {
-				fmt.Println("✓ vtsls is installed and available")
+			var serverName string
+			if len(args) > 0 {
+				serverName = args[0]
 			} else {
-				fmt.Println("✗ vtsls is not installed")
-				fmt.Printf("Install with: %s\n", lsp.InstallVTSLSCommand())
+				serverName = "vtsls" // Default to vtsls
 			}
 			
-			if lsp.IsTypeScriptLanguageServerInstalled() {
-				fmt.Println("✓ typescript-language-server is installed and available")
+			// Create installation manager
+			var installManager *lsp.InstallationManager
+			if installDir != "" {
+				installManager = lsp.NewInstallationManager(installDir)
 			} else {
-				fmt.Println("✗ typescript-language-server is not installed")
-				fmt.Printf("Install with: %s\n", lsp.InstallTypeScriptLanguageServerCommand())
+				installManager = lsp.NewInstallationManager("")
 			}
 			
-			if !lsp.IsVTSLSInstalled() && !lsp.IsTypeScriptLanguageServerInstalled() {
-				fmt.Println("\n⚠️  No TypeScript language servers are available")
-				fmt.Println("Please install at least one of the above language servers to use LSP functionality")
+			delegate := &lsp.SimpleDelegate{}
+			
+			fmt.Printf("Installing %s", serverName)
+			if installVersion != "" {
+				fmt.Printf(" version %s", installVersion)
+			}
+			fmt.Printf("...\n")
+			
+			binary, err := installManager.InstallServer(cmd.Context(), serverName, installVersion, delegate)
+			if err != nil {
+				return fmt.Errorf("installation failed: %v", err)
+			}
+			
+			fmt.Printf("✓ Successfully installed %s\n", serverName)
+			fmt.Printf("  Binary: %s\n", binary.Path)
+			fmt.Printf("  Args: %v\n", binary.Args)
+			
+			return nil
+		},
+	}
+	lspInstallCmd.Flags().StringVar(&installVersion, "version", "", "Specific version to install")
+	lspInstallCmd.Flags().StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
+
+	// LSP list command
+	lspListCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List installed language servers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var installManager *lsp.InstallationManager
+			if installDir != "" {
+				installManager = lsp.NewInstallationManager(installDir)
+			} else {
+				installManager = lsp.NewInstallationManager("")
+			}
+			
+			delegate := &lsp.SimpleDelegate{}
+			servers, err := installManager.GetInstalledServers(delegate)
+			if err != nil {
+				return err
+			}
+			
+			if len(servers) == 0 {
+				fmt.Println("No language servers installed locally")
+				fmt.Println("Use 'ts-index lsp install' to install a language server")
+				return nil
+			}
+			
+			fmt.Println("Installed Language Servers:")
+			for _, server := range servers {
+				fmt.Printf("  %s:\n", server.Name)
+				for _, version := range server.Versions {
+					fmt.Printf("    - %s\n", version)
+				}
+				fmt.Printf("    Path: %s\n", server.Path)
 			}
 			
 			return nil
 		},
 	}
+	lspListCmd.Flags().StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
 
-	lspCmd.AddCommand(lspInfoCmd, lspAnalyzeCmd, lspCompletionCmd, lspSymbolCmd, lspHealthCmd)
+	// LSP health command
+	lspHealthCmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check LSP health and language server availability",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Println("System-wide installations:")
+			if lsp.IsVTSLSInstalled() {
+				fmt.Println("  ✓ vtsls is installed and available")
+			} else {
+				fmt.Println("  ✗ vtsls is not installed")
+				fmt.Printf("    Install globally with: %s\n", lsp.InstallVTSLSCommand())
+			}
+			
+			if lsp.IsTypeScriptLanguageServerInstalled() {
+				fmt.Println("  ✓ typescript-language-server is installed and available")
+			} else {
+				fmt.Println("  ✗ typescript-language-server is not installed")
+				fmt.Printf("    Install globally with: %s\n", lsp.InstallTypeScriptLanguageServerCommand())
+			}
+			
+			// Check local installations
+			var installManager *lsp.InstallationManager
+			if installDir != "" {
+				installManager = lsp.NewInstallationManager(installDir)
+			} else {
+				installManager = lsp.NewInstallationManager("")
+			}
+			
+			delegate := &lsp.SimpleDelegate{}
+			servers, err := installManager.GetInstalledServers(delegate)
+			if err == nil && len(servers) > 0 {
+				fmt.Println("\nLocal installations:")
+				for _, server := range servers {
+					fmt.Printf("  ✓ %s (versions: %v)\n", server.Name, server.Versions)
+				}
+			} else {
+				fmt.Println("\nLocal installations:")
+				fmt.Println("  None found")
+				fmt.Println("  Use 'ts-index lsp install' to install language servers locally")
+			}
+			
+			return nil
+		},
+	}
+	lspHealthCmd.Flags().StringVar(&installDir, "dir", "", "Installation directory (default: ~/.cache/ts-index/lsp-servers)")
+
+	lspCmd.AddCommand(lspInfoCmd, lspAnalyzeCmd, lspCompletionCmd, lspSymbolCmd, lspInstallCmd, lspListCmd, lspHealthCmd)
 	rootCmd.AddCommand(indexCmd, searchCmd, lspCmd)
 
 	if err := rootCmd.Execute(); err != nil {

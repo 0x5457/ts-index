@@ -32,7 +32,8 @@ func InstallTypeScriptLanguageServerCommand() string {
 
 // TypeScriptLspAdapter implements LspAdapter for TypeScript/JavaScript
 type TypeScriptLspAdapter struct {
-	serverType ServerType
+	serverType          ServerType
+	installationManager *InstallationManager
 }
 
 type ServerType int
@@ -44,7 +45,9 @@ const (
 
 // NewTypeScriptLspAdapter creates a new TypeScript LSP adapter
 func NewTypeScriptLspAdapter() *TypeScriptLspAdapter {
-	adapter := &TypeScriptLspAdapter{}
+	adapter := &TypeScriptLspAdapter{
+		installationManager: NewInstallationManager(""),
+	}
 	
 	// Determine which server to use
 	if IsVTSLSInstalled() {
@@ -54,6 +57,16 @@ func NewTypeScriptLspAdapter() *TypeScriptLspAdapter {
 	} else {
 		// Default to vtsls, installation will be handled separately
 		adapter.serverType = ServerTypeVTSLS
+	}
+	
+	return adapter
+}
+
+// NewTypeScriptLspAdapterWithInstallDir creates a new TypeScript LSP adapter with custom install directory
+func NewTypeScriptLspAdapterWithInstallDir(installDir string) *TypeScriptLspAdapter {
+	adapter := &TypeScriptLspAdapter{
+		installationManager: NewInstallationManager(installDir),
+		serverType:          ServerTypeVTSLS, // Default to vtsls
 	}
 	
 	return adapter
@@ -87,18 +100,27 @@ func (a *TypeScriptLspAdapter) LanguageIds() map[string]string {
 
 // ServerCommand implements LspAdapter.ServerCommand
 func (a *TypeScriptLspAdapter) ServerCommand(workspaceRoot string) (string, []string, error) {
+	delegate := NewDefaultDelegate(workspaceRoot)
+	
+	// First try to get from local installation
+	serverName := a.Name()
+	if binary, err := a.installationManager.GetServerBinary(serverName, "", delegate); err == nil && binary != nil {
+		return binary.Path, binary.Args, nil
+	}
+	
+	// Fallback to system-wide installation
 	switch a.serverType {
 	case ServerTypeVTSLS:
-		if !IsVTSLSInstalled() {
-			return "", nil, fmt.Errorf("vtsls is not installed. Install with: %s", InstallVTSLSCommand())
+		if IsVTSLSInstalled() {
+			return "vtsls", []string{"--stdio"}, nil
 		}
-		return "vtsls", []string{"--stdio"}, nil
+		return "", nil, fmt.Errorf("vtsls is not installed. Use 'ts-index lsp install vtsls' or install globally with: %s", InstallVTSLSCommand())
 		
 	case ServerTypeTypeScriptLanguageServer:
-		if !IsTypeScriptLanguageServerInstalled() {
-			return "", nil, fmt.Errorf("typescript-language-server is not installed. Install with: %s", InstallTypeScriptLanguageServerCommand())
+		if IsTypeScriptLanguageServerInstalled() {
+			return "typescript-language-server", []string{"--stdio"}, nil
 		}
-		return "typescript-language-server", []string{"--stdio"}, nil
+		return "", nil, fmt.Errorf("typescript-language-server is not installed. Use 'ts-index lsp install typescript-language-server' or install globally with: %s", InstallTypeScriptLanguageServerCommand())
 		
 	default:
 		return "", nil, fmt.Errorf("unknown server type")
@@ -210,21 +232,39 @@ func (a *TypeScriptLspAdapter) Install(ctx context.Context) error {
 		return fmt.Errorf("npm is not available for installation")
 	}
 	
-	var cmd *exec.Cmd
-	switch a.serverType {
-	case ServerTypeVTSLS:
-		cmd = exec.CommandContext(ctx, "npm", "install", "-g", "@vtsls/language-server")
-	case ServerTypeTypeScriptLanguageServer:
-		cmd = exec.CommandContext(ctx, "npm", "install", "-g", "typescript-language-server", "typescript")
-	default:
-		return fmt.Errorf("unknown server type for installation")
+	delegate := &SimpleDelegate{}
+	serverName := a.Name()
+	
+	// Install to local directory
+	_, err := a.installationManager.InstallServer(ctx, serverName, "", delegate)
+	return err
+}
+
+// InstallVersion installs a specific version of the language server
+func (a *TypeScriptLspAdapter) InstallVersion(ctx context.Context, version string) error {
+	if !a.CanInstall() {
+		return fmt.Errorf("npm is not available for installation")
 	}
 	
-	return cmd.Run()
+	delegate := &SimpleDelegate{}
+	serverName := a.Name()
+	
+	// Install specific version to local directory
+	_, err := a.installationManager.InstallServer(ctx, serverName, version, delegate)
+	return err
 }
 
 // IsInstalled implements LspAdapter.IsInstalled
 func (a *TypeScriptLspAdapter) IsInstalled() bool {
+	delegate := &SimpleDelegate{}
+	serverName := a.Name()
+	
+	// Check local installation first
+	if binary, err := a.installationManager.GetServerBinary(serverName, "", delegate); err == nil && binary != nil {
+		return true
+	}
+	
+	// Check system-wide installation
 	switch a.serverType {
 	case ServerTypeVTSLS:
 		return IsVTSLSInstalled()
