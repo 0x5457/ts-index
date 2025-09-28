@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/0x5457/ts-index/internal/embeddings"
 	"github.com/0x5457/ts-index/internal/models"
@@ -20,6 +21,11 @@ func (s *Service) Search(
 	query string,
 	topK int,
 ) ([]models.SemanticHit, error) {
+	// Check if vector store is available
+	if s.Vector == nil {
+		return nil, fmt.Errorf("vector store not available")
+	}
+
 	// Convert query to vector embedding
 	qvec, err := s.Embedder.EmbedQuery(query)
 	if err != nil {

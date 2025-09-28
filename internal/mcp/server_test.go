@@ -10,7 +10,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	server := New(nil, nil) // nil services for basic functionality test
+	server := New(nil, nil, ServerConfig{}) // nil services for basic functionality test
 	assert.NotNil(t, server)
 }
 

@@ -16,13 +16,19 @@ type Server struct {
 	server        *server.MCPServer
 	searchService *search.Service // Search service (can be nil)
 	indexer       indexer.Indexer // Indexer (can be nil)
+	config        ServerConfig    // Server configuration
 }
 
-// New returns an MCP server with the given services.
-func New(searchService *search.Service, indexer indexer.Indexer) *server.MCPServer {
+// New returns an MCP server with the given services and configuration.
+func New(
+	searchService *search.Service,
+	indexer indexer.Indexer,
+	config ServerConfig,
+) *server.MCPServer {
 	srv := &Server{
 		searchService: searchService,
 		indexer:       indexer,
+		config:        config,
 		server: server.NewMCPServer(
 			"ts-index/mcp",
 			"0.1.0",
@@ -51,14 +57,6 @@ func newSemanticSearchTool() mcp.Tool {
 		"semantic_search",
 		mcp.WithDescription("Semantic code search by natural language query"),
 		mcp.WithString("query", mcp.Description("Natural language query"), mcp.Required()),
-		mcp.WithString(
-			"db",
-			mcp.Description("SQLite DB path (optional, uses server default if not provided)"),
-		),
-		mcp.WithString(
-			"embed_url",
-			mcp.Description("Embedding API URL (optional, uses server default if not provided)"),
-		),
 		mcp.WithNumber("top_k", mcp.Description("Top K results"), mcp.DefaultNumber(5)),
 		mcp.WithString(
 			"project",
@@ -72,10 +70,6 @@ func newSymbolSearchTool() mcp.Tool {
 		"symbol_search",
 		mcp.WithDescription("Exact symbol name search in symbol store"),
 		mcp.WithString("name", mcp.Description("Symbol name"), mcp.Required()),
-		mcp.WithString(
-			"db",
-			mcp.Description("SQLite DB path (optional, uses server default if not provided)"),
-		),
 	)
 }
 
@@ -154,17 +148,6 @@ func (srv *Server) handleSemanticSearch(
 	topK := req.GetInt("top_k", 5)
 	project := req.GetString("project", "")
 
-	// Check for custom config parameters
-	dbPath := req.GetString("db", "")
-	embURL := req.GetString("embed_url", "")
-
-	if dbPath != "" || embURL != "" {
-		return mcp.NewToolResultError(
-			"Custom database path and embedding URL are not supported in this server instance. " +
-				"Please start server with the desired configuration.",
-		), nil
-	}
-
 	// Use default search service
 	if srv.searchService == nil {
 		return mcp.NewToolResultError("search service not initialized"), nil
@@ -194,15 +177,6 @@ func (srv *Server) handleSymbolSearch(
 	name, err := req.RequireString("name")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	// Check for custom config parameters
-	dbPath := req.GetString("db", "")
-	if dbPath != "" {
-		return mcp.NewToolResultError(
-			"Custom database path is not supported in this server instance. " +
-				"Please start server with the desired database configuration.",
-		), nil
 	}
 
 	// Use default indexer for symbol search

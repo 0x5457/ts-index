@@ -140,6 +140,7 @@ func newMCPListToolsCommand() *cobra.Command {
 	var (
 		transport string
 		address   string
+		db        string
 	)
 
 	cmd := &cobra.Command{
@@ -150,7 +151,9 @@ func newMCPListToolsCommand() *cobra.Command {
 			defer cancel()
 
 			// Use minimal config for list-tools
-			config := appmcp.ServerConfig{}
+			config := appmcp.ServerConfig{
+				DB: db,
+			}
 			client, err := createMCPClient(ctx, transport, address, config)
 			if err != nil {
 				return fmt.Errorf("create MCP client failed: %w", err)
@@ -204,7 +207,7 @@ func newMCPListToolsCommand() *cobra.Command {
 		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
 	cmd.Flags().
 		StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
-
+	cmd.Flags().StringVarP(&db, "db", "d", "", "SQLite database path")
 	return cmd
 }
 

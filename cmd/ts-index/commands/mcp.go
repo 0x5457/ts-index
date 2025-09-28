@@ -36,8 +36,8 @@ func NewMCPServeCommand() *cobra.Command {
 			// Create result channel for server errors
 			resultCh := make(chan error, 1)
 
-			// Create Fx app with configuration
-			app := fx.New(
+			// Configure FX options based on transport mode
+			fxOptions := []fx.Option{
 				appfx.Module,
 				fx.Supply(
 					fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
@@ -54,7 +54,10 @@ func NewMCPServeCommand() *cobra.Command {
 						},
 					})
 				}),
-			)
+			}
+
+			// Create Fx app with configuration
+			app := fx.New(fxOptions...)
 
 			// Handle http-handler case separately as it needs special handling
 			if transport == "http-handler" {
@@ -63,7 +66,7 @@ func NewMCPServeCommand() *cobra.Command {
 				}
 
 				// For http-handler, we need to register the handler during app construction
-				app = fx.New(
+				httpHandlerOptions := []fx.Option{
 					appfx.Module,
 					fx.Supply(
 						fx.Annotate(db, fx.ResultTags(`name:"dbPath"`)),
@@ -74,7 +77,9 @@ func NewMCPServeCommand() *cobra.Command {
 						sh := server.NewStreamableHTTPServer(srv)
 						http.Handle("/mcp", sh)
 					}),
-				)
+				}
+
+				app = fx.New(httpHandlerOptions...)
 
 				ctx, cancel := context.WithCancel(cmd.Context())
 				defer cancel()

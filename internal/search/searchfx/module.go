@@ -12,14 +12,14 @@ type Params struct {
 	fx.In
 
 	Embedder embeddings.Embedder
-	VecStore storage.VectorStore
+	VecStore storage.VectorStore `optional:"true"`
 }
 
 // NewSearchService creates a new search service instance
 func NewSearchService(params Params) *search.Service {
 	return &search.Service{
 		Embedder: params.Embedder,
-		Vector:   params.VecStore,
+		Vector:   params.VecStore, // Can be nil
 	}
 }
 

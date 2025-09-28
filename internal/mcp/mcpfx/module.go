@@ -23,7 +23,12 @@ type Params struct {
 
 // NewMCPServer creates a new MCP server instance
 func NewMCPServer(params Params) *server.MCPServer {
-	return appmcp.New(params.SearchService, params.Indexer)
+	config := appmcp.ServerConfig{
+		Project:  params.Config.Project,
+		DB:       params.Config.DBPath,
+		EmbedURL: params.Config.EmbedURL,
+	}
+	return appmcp.New(params.SearchService, params.Indexer, config)
 }
 
 // Lifecycle manages MCP server lifecycle

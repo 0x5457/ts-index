@@ -1,9 +1,11 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/0x5457/ts-index/internal/indexer"
@@ -50,7 +52,45 @@ func NewStdioClientWithConfig(ctx context.Context, config ServerConfig) (*Client
 		args = append(args, "--embed-url", config.EmbedURL)
 	}
 
-	// Use the same executable to launch the MCP server
+	// First, test if the server can start properly by running it briefly
+	testCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	var stderrBuf bytes.Buffer
+	cmd := exec.CommandContext(testCtx, exePath, args...)
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start MCP server process: %w", err)
+	}
+
+	// Wait a moment to see if the process exits with an error
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		// Process exited quickly, likely due to an error
+		if err != nil {
+			stderrContent := stderrBuf.String()
+			if stderrContent != "" {
+				return nil, fmt.Errorf(
+					"MCP server failed to start: %w\nServer output: %s",
+					err,
+					stderrContent,
+				)
+			}
+			return nil, fmt.Errorf("MCP server failed to start: %w", err)
+		}
+	case <-testCtx.Done():
+		// Process is still running after timeout, kill it and proceed
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}
+
+	// Now create the actual transport
 	tr := transport.NewStdio(exePath, nil, args...)
 	if err := tr.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start mcp transport: %w", err)
@@ -93,7 +133,7 @@ func NewInProcessClient(
 	searchService *search.Service,
 	indexer indexer.Indexer,
 ) (*Client, error) {
-	srv := New(searchService, indexer)
+	srv := New(searchService, indexer, ServerConfig{})
 	tr := transport.NewInProcessTransport(srv)
 	if err := tr.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start in-process transport: %w", err)
