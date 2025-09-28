@@ -540,6 +540,93 @@ func (c *LSPClient) FindReferences(
 	return locations, nil
 }
 
+// GotoImplementation implements LanguageServer.GotoImplementation
+func (c *LSPClient) GotoImplementation(
+	ctx context.Context,
+	params TextDocumentPositionParams,
+) ([]Location, error) {
+	response, err := c.sendRequest(ctx, "textDocument/implementation", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 || string(response) == nullResponseString {
+		return []Location{}, nil
+	}
+
+	// Try to parse as array of Location first
+	var locations []Location
+	if err := json.Unmarshal(response, &locations); err == nil {
+		return locations, nil
+	}
+
+	// Fallback: try to parse as single Location
+	var location Location
+	if err := json.Unmarshal(response, &location); err != nil {
+		return nil, err
+	}
+
+	return []Location{location}, nil
+}
+
+// GotoTypeDefinition implements LanguageServer.GotoTypeDefinition
+func (c *LSPClient) GotoTypeDefinition(
+	ctx context.Context,
+	params TextDocumentPositionParams,
+) ([]Location, error) {
+	response, err := c.sendRequest(ctx, "textDocument/typeDefinition", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 || string(response) == nullResponseString {
+		return []Location{}, nil
+	}
+
+	// Try to parse as array of Location first
+	var locations []Location
+	if err := json.Unmarshal(response, &locations); err == nil {
+		return locations, nil
+	}
+
+	// Fallback: try to parse as single Location
+	var location Location
+	if err := json.Unmarshal(response, &location); err != nil {
+		return nil, err
+	}
+
+	return []Location{location}, nil
+}
+
+// GotoDeclaration implements LanguageServer.GotoDeclaration
+func (c *LSPClient) GotoDeclaration(
+	ctx context.Context,
+	params TextDocumentPositionParams,
+) ([]Location, error) {
+	response, err := c.sendRequest(ctx, "textDocument/declaration", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 || string(response) == nullResponseString {
+		return []Location{}, nil
+	}
+
+	// Try to parse as array of Location first
+	var locations []Location
+	if err := json.Unmarshal(response, &locations); err == nil {
+		return locations, nil
+	}
+
+	// Fallback: try to parse as single Location
+	var location Location
+	if err := json.Unmarshal(response, &location); err != nil {
+		return nil, err
+	}
+
+	return []Location{location}, nil
+}
+
 // WorkspaceSymbols implements LanguageServer.WorkspaceSymbols
 func (c *LSPClient) WorkspaceSymbols(
 	ctx context.Context,

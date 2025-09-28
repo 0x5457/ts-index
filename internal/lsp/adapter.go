@@ -208,6 +208,60 @@ func (ls *LanguageServer) FindReferences(
 	return ls.client.FindReferences(ctx, params)
 }
 
+// GotoImplementation finds symbol implementations
+func (ls *LanguageServer) GotoImplementation(
+	ctx context.Context,
+	uri string,
+	position Position,
+) ([]Location, error) {
+	if ls.client == nil {
+		return nil, ErrServerNotRunning
+	}
+
+	params := TextDocumentPositionParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+		Position:     position,
+	}
+
+	return ls.client.GotoImplementation(ctx, params)
+}
+
+// GotoTypeDefinition finds symbol type definitions
+func (ls *LanguageServer) GotoTypeDefinition(
+	ctx context.Context,
+	uri string,
+	position Position,
+) ([]Location, error) {
+	if ls.client == nil {
+		return nil, ErrServerNotRunning
+	}
+
+	params := TextDocumentPositionParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+		Position:     position,
+	}
+
+	return ls.client.GotoTypeDefinition(ctx, params)
+}
+
+// GotoDeclaration finds symbol declarations
+func (ls *LanguageServer) GotoDeclaration(
+	ctx context.Context,
+	uri string,
+	position Position,
+) ([]Location, error) {
+	if ls.client == nil {
+		return nil, ErrServerNotRunning
+	}
+
+	params := TextDocumentPositionParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+		Position:     position,
+	}
+
+	return ls.client.GotoDeclaration(ctx, params)
+}
+
 // WorkspaceSymbols searches for symbols in the workspace
 func (ls *LanguageServer) WorkspaceSymbols(
 	ctx context.Context,

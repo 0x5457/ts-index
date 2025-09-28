@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/0x5457/ts-index/internal/models"
 	_ "modernc.org/sqlite"
@@ -62,7 +63,7 @@ func (s *SymbolStore) UpsertSymbols(symbols []models.Symbol) error {
 		if _, err := stmt.Exec(
 			sym.ID,
 			sym.Name,
-			string(sym.Kind),
+			fmt.Sprint(rune(sym.Kind)),
 			sym.File,
 			sym.StartLine,
 			sym.EndLine,
@@ -96,7 +97,7 @@ func (s *SymbolStore) FindByName(name string) ([]models.Symbol, error) {
 		if err := rows.Scan(&sym.ID, &sym.Name, &kind, &sym.File, &sym.StartLine, &sym.EndLine, &sym.Docstring); err != nil {
 			return nil, err
 		}
-		sym.Kind = models.SymbolKind(kind)
+		sym.Kind = models.StringToSymbolKind(kind)
 		out = append(out, sym)
 	}
 	return out, rows.Err()
@@ -115,6 +116,6 @@ func (s *SymbolStore) GetByID(id string) (*models.Symbol, error) {
 		}
 		return nil, err
 	}
-	sym.Kind = models.SymbolKind(kind)
+	sym.Kind = models.StringToSymbolKind(kind)
 	return &sym, nil
 }

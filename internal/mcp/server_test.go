@@ -22,12 +22,12 @@ func TestToolDefinitions(t *testing.T) {
 	}{
 		{"semantic_search", newSemanticSearchTool, "semantic_search"},
 		{"symbol_search", newSymbolSearchTool, "symbol_search"},
-		{"lsp_info", newLSPInfoTool, "lsp_info"},
 		{"lsp_analyze", newLSPAnalyzeTool, "lsp_analyze"},
 		{"lsp_completion", newLSPCompletionTool, "lsp_completion"},
 		{"lsp_symbols", newLSPSymbolsTool, "lsp_symbols"},
-		{"lsp_list", newLSPListTool, "lsp_list"},
-		{"lsp_health", newLSPHealthTool, "lsp_health"},
+		{"lsp_implementation", newLSPImplementationTool, "lsp_implementation"},
+		{"lsp_type_definition", newLSPTypeDefinitionTool, "lsp_type_definition"},
+		{"lsp_declaration", newLSPDeclarationTool, "lsp_declaration"},
 	}
 
 	for _, tt := range tests {
@@ -67,10 +67,19 @@ func TestLSPAnalyzeTool(t *testing.T) {
 	assert.Contains(t, tool.Description, "Analyze symbol at position")
 
 	// check required params
-	requiredParams := []string{"project", "file", "line", "character"}
+	requiredParams := []string{"file", "line", "character"}
 	for _, param := range requiredParams {
 		assert.Contains(t, tool.InputSchema.Properties, param)
 	}
+
+	// check optional params
+	optionalParams := []string{"defs", "hover", "refs"}
+	for _, param := range optionalParams {
+		assert.Contains(t, tool.InputSchema.Properties, param)
+	}
+
+	// project parameter should no longer exist
+	assert.NotContains(t, tool.InputSchema.Properties, "project")
 }
 
 func TestHandleSemanticSearchError(t *testing.T) {
@@ -163,67 +172,56 @@ func TestHandleLSPSymbolsError(t *testing.T) {
 	assert.NotEmpty(t, result.Content) // check error content
 }
 
-func TestHandleLSPInfo(t *testing.T) {
+func TestHandleLSPImplementationError(t *testing.T) {
 	ctx := context.Background()
 
+	// test missing required params
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
-			Name:      "lsp_info",
+			Name:      "lsp_implementation",
 			Arguments: map[string]any{},
 		},
 	}
 
 	srv := &Server{searchService: nil, indexer: nil}
-	result, err := srv.handleLSPInfo(ctx, req)
+	result, err := srv.handleLSPImplementation(ctx, req)
 	require.NoError(t, err)
-	assert.False(t, result.IsError)
-	assert.NotNil(t, result.StructuredContent)
-
-	// check return structure
-	content := result.StructuredContent.(map[string]any)
-	assert.Contains(t, content, "adapters")
-	assert.Contains(t, content, "servers")
+	assert.True(t, result.IsError)
+	assert.NotEmpty(t, result.Content) // check error content
 }
 
-func TestHandleLSPList(t *testing.T) {
+func TestHandleLSPTypeDefinitionError(t *testing.T) {
 	ctx := context.Background()
 
+	// test missing required params
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
-			Name:      "lsp_list",
+			Name:      "lsp_type_definition",
 			Arguments: map[string]any{},
 		},
 	}
 
 	srv := &Server{searchService: nil, indexer: nil}
-	result, err := srv.handleLSPList(ctx, req)
+	result, err := srv.handleLSPTypeDefinition(ctx, req)
 	require.NoError(t, err)
-	assert.False(t, result.IsError)
-	assert.NotNil(t, result.StructuredContent)
-
-	// check return structure
-	content := result.StructuredContent.(map[string]any)
-	assert.Contains(t, content, "installed")
+	assert.True(t, result.IsError)
+	assert.NotEmpty(t, result.Content) // check error content
 }
 
-func TestHandleLSPHealth(t *testing.T) {
+func TestHandleLSPDeclarationError(t *testing.T) {
 	ctx := context.Background()
 
+	// test missing required params
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
-			Name:      "lsp_health",
+			Name:      "lsp_declaration",
 			Arguments: map[string]any{},
 		},
 	}
 
 	srv := &Server{searchService: nil, indexer: nil}
-	result, err := srv.handleLSPHealth(ctx, req)
+	result, err := srv.handleLSPDeclaration(ctx, req)
 	require.NoError(t, err)
-	assert.False(t, result.IsError)
-	assert.NotNil(t, result.StructuredContent)
-
-	// check return structure
-	content := result.StructuredContent.(map[string]any)
-	assert.Contains(t, content, "vtsls_system")
-	assert.Contains(t, content, "tsls_system")
+	assert.True(t, result.IsError)
+	assert.NotEmpty(t, result.Content) // check error content
 }

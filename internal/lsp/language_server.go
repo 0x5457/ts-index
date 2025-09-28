@@ -29,6 +29,15 @@ type LanguageServerInterface interface {
 	// FindReferences finds all references to the symbol at the given position
 	FindReferences(ctx context.Context, params TextDocumentPositionParams) ([]Location, error)
 
+	// GotoImplementation provides goto implementation information
+	GotoImplementation(ctx context.Context, params TextDocumentPositionParams) ([]Location, error)
+
+	// GotoTypeDefinition provides goto type definition information
+	GotoTypeDefinition(ctx context.Context, params TextDocumentPositionParams) ([]Location, error)
+
+	// GotoDeclaration provides goto declaration information
+	GotoDeclaration(ctx context.Context, params TextDocumentPositionParams) ([]Location, error)
+
 	// WorkspaceSymbols returns workspace symbols matching the query
 	WorkspaceSymbols(ctx context.Context, params WorkspaceSymbolParams) ([]SymbolInformation, error)
 

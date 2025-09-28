@@ -2,6 +2,7 @@ package tsparser
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -196,7 +197,7 @@ func appendDecl(
 	content := string(code[n.StartByte():n.EndByte()])
 	sig := firstLine(content)
 	doc := extractDocstring(code, n)
-	id := util.GenerateID(path, int(startLine), int(endLine), string(kind), name)
+	id := util.GenerateID(path, int(startLine), int(endLine), fmt.Sprint(rune(kind)), name)
 	*symbols = append(
 		*symbols,
 		models.Symbol{

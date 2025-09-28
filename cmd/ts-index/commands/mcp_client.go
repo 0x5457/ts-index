@@ -39,7 +39,12 @@ func NewMCPClientCommand() *cobra.Command {
 		newMCPListToolsCommand(),
 		newMCPSearchCommand(),
 		newMCPLSPCommand(),
+		newMCPAstGrepCommand(),
 	)
+
+	// Add global flags that will be inherited by all subcommands
+	cmd.PersistentFlags().
+		StringP("project", "p", "", "project path (will be used as server configuration)")
 
 	return cmd
 }
@@ -124,14 +129,9 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVarP(&project, "project", "p", "", "project path")
-	cmd.Flags().StringVarP(&db, "db", "d", "", "SQLite database path")
-	cmd.Flags().
-		StringVar(&embedURL, "embed-url", constants.DefaultEmbedURL, "embed API address")
-	cmd.Flags().
-		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
-	cmd.Flags().
-		StringVarP(&address, "address", "a", "", "server URL (http/sse), ignored for stdio/inproc")
+	cmd.Flags().StringP("language", "l", "typescript", "Programming language")
+	cmd.Flags().IntP("max-results", "m", 50, "Maximum number of results")
+	cmd.Flags().IntP("context", "c", 0, "Number of context lines")
 
 	return cmd
 }
@@ -281,7 +281,6 @@ func newMCPSearchCommand() *cobra.Command {
 
 func newMCPLSPCommand() *cobra.Command {
 	var (
-		project   string
 		transport string
 		address   string
 	)
@@ -289,35 +288,6 @@ func newMCPLSPCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lsp",
 		Short: "LSP related operations",
-	}
-
-	infoCmd := &cobra.Command{
-		Use:   "info",
-		Short: "Show LSP information",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-
-			// Use minimal config for lsp info
-			config := appmcp.ServerConfig{}
-			client, err := createMCPClient(ctx, transport, address, config)
-			if err != nil {
-				return fmt.Errorf("create MCP client failed: %w", err)
-			}
-			defer client.Close() //nolint:errcheck
-
-			result, err := client.Call(ctx, "lsp_info", map[string]any{})
-			if err != nil {
-				return fmt.Errorf("get LSP info failed: %w", err)
-			}
-
-			output, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("format result failed: %w", err)
-			}
-			fmt.Println(string(output))
-			return nil
-		},
 	}
 
 	analyzeCmd := &cobra.Command{
@@ -333,6 +303,12 @@ func newMCPLSPCommand() *cobra.Command {
 			character, err := strconv.Atoi(args[2])
 			if err != nil {
 				return fmt.Errorf("invalid character position: %s", args[2])
+			}
+
+			// Get global project parameter
+			project, err := cmd.Flags().GetString("project")
+			if err != nil {
+				return fmt.Errorf("failed to get project parameter: %w", err)
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -352,9 +328,6 @@ func newMCPLSPCommand() *cobra.Command {
 				"line":      line,
 				"character": character,
 			}
-			if project != "" {
-				toolArgs["project"] = project
-			}
 
 			result, err := client.Call(ctx, "lsp_analyze", toolArgs)
 			if err != nil {
@@ -370,9 +343,28 @@ func newMCPLSPCommand() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(infoCmd, analyzeCmd)
+	// Create the new goto commands
+	implementationCmd := newMCPLSPGotoCommand(
+		"implementation",
+		"Find implementations of symbol at position",
+		"lsp_implementation",
+		&transport, &address,
+	)
+	typeDefinitionCmd := newMCPLSPGotoCommand(
+		"type-definition",
+		"Find type definitions of symbol at position",
+		"lsp_type_definition",
+		&transport, &address,
+	)
+	declarationCmd := newMCPLSPGotoCommand(
+		"declaration",
+		"Find declarations of symbol at position",
+		"lsp_declaration",
+		&transport, &address,
+	)
 
-	cmd.PersistentFlags().StringVarP(&project, "project", "p", "", "project path")
+	cmd.AddCommand(analyzeCmd, implementationCmd, typeDefinitionCmd, declarationCmd)
+
 	cmd.PersistentFlags().
 		StringVarP(&transport, "transport", "t", transportStdio, "transport (stdio, http, sse, inproc)")
 	cmd.PersistentFlags().
@@ -424,5 +416,274 @@ func createMCPClient(
 			"unsupported transport: %s (supported: stdio, http, sse, inproc)",
 			transport,
 		)
+	}
+}
+
+// astGrepCommandBuilder is a function type for building ast-grep command arguments
+type astGrepCommandBuilder func(args []string, cmd *cobra.Command) (toolName string, toolArgs map[string]any, err error)
+
+// newAstGrepCommand creates a generic ast-grep command to reduce code duplication
+func newAstGrepCommand(
+	use, short string,
+	expectedArgs int,
+	builder astGrepCommandBuilder,
+) *cobra.Command {
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ExactArgs(expectedArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			toolName, toolArgs, err := builder(args, cmd)
+			if err != nil {
+				return err
+			}
+
+			// Get global flags
+			project, _ := cmd.Flags().GetString("project")
+			transport, _ := cmd.Flags().GetString("transport")
+			address, _ := cmd.Flags().GetString("address")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			config := appmcp.ServerConfig{
+				Project: project,
+			}
+
+			client, err := createMCPClient(ctx, transport, address, config)
+			if err != nil {
+				return fmt.Errorf("create MCP client failed: %w", err)
+			}
+			defer client.Close() //nolint:errcheck
+
+			result, err := client.Call(ctx, toolName, toolArgs)
+			if err != nil {
+				return fmt.Errorf("%s failed: %w", toolName, err)
+			}
+
+			output, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("format result failed: %w", err)
+			}
+			fmt.Println(string(output))
+			return nil
+		},
+	}
+}
+
+// newMCPLSPGotoCommand creates a generic LSP goto command for MCP client
+func newMCPLSPGotoCommand(
+	use, short, mcpTool string,
+	transport, address *string,
+) *cobra.Command {
+	return &cobra.Command{
+		Use:   use + " <file> <line> <character>",
+		Short: short,
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			file := args[0]
+			line, err := strconv.Atoi(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid line number: %s", args[1])
+			}
+			character, err := strconv.Atoi(args[2])
+			if err != nil {
+				return fmt.Errorf("invalid character position: %s", args[2])
+			}
+
+			// Get global project parameter
+			project, err := cmd.Flags().GetString("project")
+			if err != nil {
+				return fmt.Errorf("failed to get project parameter: %w", err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			config := appmcp.ServerConfig{
+				Project: project,
+			}
+			client, err := createMCPClient(ctx, *transport, *address, config)
+			if err != nil {
+				return fmt.Errorf("create MCP client failed: %w", err)
+			}
+			defer client.Close() //nolint:errcheck
+
+			toolArgs := map[string]any{
+				"file":      file,
+				"line":      line,
+				"character": character,
+			}
+
+			result, err := client.Call(ctx, mcpTool, toolArgs)
+			if err != nil {
+				return fmt.Errorf("%s failed: %w", use, err)
+			}
+
+			output, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("format result failed: %w", err)
+			}
+			fmt.Println(string(output))
+			return nil
+		},
+	}
+}
+
+// newMCPAstGrepCommand creates ast-grep subcommands
+func newMCPAstGrepCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "ast-grep",
+		Short: "AST-grep structural code search",
+		Long:  "Commands for structural code search using ast-grep",
+	}
+
+	cmd.AddCommand(
+		newAstGrepSearchCommand(),
+		newAstGrepRuleCommand(),
+		newAstGrepTestCommand(),
+		newAstGrepSyntaxTreeCommand(),
+	)
+
+	return cmd
+}
+
+// newAstGrepSearchCommand creates the ast-grep search command
+func newAstGrepSearchCommand() *cobra.Command {
+	cmd := newAstGrepCommand("search <pattern>", "Search code patterns using ast-grep", 1,
+		func(args []string, cmd *cobra.Command) (string, map[string]any, error) {
+			pattern := args[0]
+			language, _ := cmd.Flags().GetString("language")
+			maxResults, _ := cmd.Flags().GetInt("max-results")
+			contextLines, _ := cmd.Flags().GetInt("context")
+
+			toolArgs := map[string]any{
+				"pattern":     pattern,
+				"language":    language,
+				"max_results": maxResults,
+				"context":     contextLines,
+			}
+
+			return "ast_grep_search", toolArgs, nil
+		})
+
+	cmd.Flags().StringP("language", "l", "typescript", "Programming language")
+	cmd.Flags().IntP("max-results", "m", 50, "Maximum number of results")
+	cmd.Flags().IntP("context", "c", 0, "Number of context lines")
+
+	return cmd
+}
+
+// newAstGrepRuleCommand creates the ast-grep rule search command
+func newAstGrepRuleCommand() *cobra.Command {
+	return newAstGrepCommand("rule <rule>", "Search using ast-grep YAML rule", 1,
+		func(args []string, cmd *cobra.Command) (string, map[string]any, error) {
+			rule := args[0]
+			maxResults, _ := cmd.Flags().GetInt("max-results")
+
+			toolArgs := map[string]any{
+				"rule":        rule,
+				"max_results": maxResults,
+			}
+
+			return "ast_grep_rule", toolArgs, nil
+		})
+}
+
+// newAstGrepTestCommand creates the ast-grep test command
+func newAstGrepTestCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "test <rule> <code>",
+		Short: "Test ast-grep rule against code snippet",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rule := args[0]
+			code := args[1]
+			language, _ := cmd.Flags().GetString("language")
+
+			// Get global flags
+			project, _ := cmd.Flags().GetString("project")
+			transport, _ := cmd.Flags().GetString("transport")
+			address, _ := cmd.Flags().GetString("address")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			config := appmcp.ServerConfig{
+				Project: project,
+			}
+
+			client, err := createMCPClient(ctx, transport, address, config)
+			if err != nil {
+				return fmt.Errorf("create MCP client failed: %w", err)
+			}
+			defer client.Close() //nolint:errcheck
+
+			toolArgs := map[string]any{
+				"rule":     rule,
+				"code":     code,
+				"language": language,
+			}
+
+			result, err := client.Call(ctx, "ast_grep_test", toolArgs)
+			if err != nil {
+				return fmt.Errorf("ast-grep test failed: %w", err)
+			}
+
+			output, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("format result failed: %w", err)
+			}
+			fmt.Println(string(output))
+			return nil
+		},
+	}
+}
+
+// newAstGrepSyntaxTreeCommand creates the ast-grep syntax tree command
+func newAstGrepSyntaxTreeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "syntax-tree <code>",
+		Short: "Dump syntax tree of code snippet",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			code := args[0]
+			language, _ := cmd.Flags().GetString("language")
+
+			// Get global flags
+			project, _ := cmd.Flags().GetString("project")
+			transport, _ := cmd.Flags().GetString("transport")
+			address, _ := cmd.Flags().GetString("address")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			config := appmcp.ServerConfig{
+				Project: project,
+			}
+
+			client, err := createMCPClient(ctx, transport, address, config)
+			if err != nil {
+				return fmt.Errorf("create MCP client failed: %w", err)
+			}
+			defer client.Close() //nolint:errcheck
+
+			toolArgs := map[string]any{
+				"code":     code,
+				"language": language,
+			}
+
+			result, err := client.Call(ctx, "ast_grep_syntax_tree", toolArgs)
+			if err != nil {
+				return fmt.Errorf("ast-grep syntax tree failed: %w", err)
+			}
+
+			output, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("format result failed: %w", err)
+			}
+			fmt.Println(string(output))
+			return nil
+		},
 	}
 }

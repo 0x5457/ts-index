@@ -20,6 +20,9 @@ func NewLSPCommand() *cobra.Command {
 		newLSPAnalyzeCommand(),
 		newLSPCompletionCommand(),
 		newLSPSymbolCommand(),
+		newLSPImplementationCommand(),
+		newLSPTypeDefinitionCommand(),
+		newLSPDeclarationCommand(),
 		newLSPInstallCommand(),
 		newLSPInstallByLanguageCommand(),
 		newLSPListCommand(),
@@ -75,7 +78,6 @@ func newLSPAnalyzeCommand() *cobra.Command {
 			}
 			defer func() { _ = cli.Close() }()
 			res, err := cli.Call(cmd.Context(), "lsp_analyze", map[string]any{
-				"project":   project,
 				"file":      args[0],
 				"line":      lspLine,
 				"character": lspCharacter,
@@ -125,7 +127,6 @@ func newLSPCompletionCommand() *cobra.Command {
 			}
 			defer func() { _ = cli.Close() }()
 			res, err := cli.Call(cmd.Context(), "lsp_completion", map[string]any{
-				"project":     project,
 				"file":        args[0],
 				"line":        lspLine,
 				"character":   lspCharacter,
@@ -172,7 +173,6 @@ func newLSPSymbolCommand() *cobra.Command {
 			}
 			defer func() { _ = cli.Close() }()
 			res, err := cli.Call(cmd.Context(), "lsp_symbols", map[string]any{
-				"project":     project,
 				"query":       query,
 				"max_results": maxResults,
 			})
@@ -190,6 +190,71 @@ func newLSPSymbolCommand() *cobra.Command {
 	cmd.Flags().IntVar(&maxResults, "max-results", 50, "Maximum number of results")
 
 	return cmd
+}
+
+// newLSPGotoCommand creates a generic goto command
+func newLSPGotoCommand(use, short, mcpMethod string) *cobra.Command {
+	var project string
+	var lspLine int
+	var lspCharacter int
+
+	cmd := &cobra.Command{
+		Use:   use + " [file-path]",
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if project == "" {
+				return fmt.Errorf("--project is required")
+			}
+
+			cli, err := mcpclient.NewStdioClient(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = cli.Close() }()
+			res, err := cli.Call(cmd.Context(), mcpMethod, map[string]any{
+				"file":      args[0],
+				"line":      lspLine,
+				"character": lspCharacter,
+			})
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&project, "project", "", "Path to project root")
+	cmd.Flags().IntVar(&lspLine, "line", 0, "Line number (0-based)")
+	cmd.Flags().IntVar(&lspCharacter, "character", 0, "Character number (0-based)")
+
+	return cmd
+}
+
+func newLSPImplementationCommand() *cobra.Command {
+	return newLSPGotoCommand(
+		"implementation",
+		"Find implementations of symbol at position using LSP",
+		"lsp_implementation",
+	)
+}
+
+func newLSPTypeDefinitionCommand() *cobra.Command {
+	return newLSPGotoCommand(
+		"type-definition",
+		"Find type definitions of symbol at position using LSP",
+		"lsp_type_definition",
+	)
+}
+
+func newLSPDeclarationCommand() *cobra.Command {
+	return newLSPGotoCommand(
+		"declaration",
+		"Find declarations of symbol at position using LSP",
+		"lsp_declaration",
+	)
 }
 
 func newLSPInstallCommand() *cobra.Command {

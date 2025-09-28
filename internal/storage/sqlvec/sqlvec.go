@@ -158,7 +158,7 @@ func (s *Store) Upsert(chunks []models.CodeChunk, embeddings [][]float32) error 
 	for i, ch := range chunks {
 		if _, err := chunkStmt.Exec(
 			ch.ID, ch.File, ch.Language, ch.NodeType, ch.StartLine, ch.EndLine, ch.StartByte, ch.EndByte,
-			ch.Content, ch.Docstring, ch.Signature, string(ch.Kind), ch.Name,
+			ch.Content, ch.Docstring, ch.Signature, fmt.Sprint(rune(ch.Kind)), ch.Name,
 		); err != nil {
 			_ = tx.Rollback()
 			return err
@@ -286,7 +286,7 @@ func (s *Store) Query(embedding []float32, topK int) ([]models.SemanticHit, erro
 		); err != nil {
 			return nil, err
 		}
-		ch.Kind = models.SymbolKind(kind)
+		ch.Kind = models.StringToSymbolKind(kind)
 		hits = append(hits, models.SemanticHit{Chunk: ch, Score: 1 - score})
 	}
 	if err := rows.Err(); err != nil {
@@ -353,7 +353,7 @@ func (s *Store) UpsertSymbols(symbols []models.Symbol) error {
 		if _, err := stmt.Exec(
 			sym.ID,
 			sym.Name,
-			string(sym.Kind),
+			fmt.Sprint(rune(sym.Kind)),
 			sym.File,
 			sym.StartLine,
 			sym.EndLine,
@@ -387,7 +387,7 @@ func (s *Store) FindByName(name string) ([]models.Symbol, error) {
 		if err := rows.Scan(&sym.ID, &sym.Name, &kind, &sym.File, &sym.StartLine, &sym.EndLine, &sym.Docstring); err != nil {
 			return nil, err
 		}
-		sym.Kind = models.SymbolKind(kind)
+		sym.Kind = models.StringToSymbolKind(kind)
 		out = append(out, sym)
 	}
 	return out, rows.Err()
@@ -406,6 +406,6 @@ func (s *Store) GetByID(id string) (*models.Symbol, error) {
 		}
 		return nil, err
 	}
-	sym.Kind = models.SymbolKind(kind)
+	sym.Kind = models.StringToSymbolKind(kind)
 	return &sym, nil
 }

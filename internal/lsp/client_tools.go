@@ -29,21 +29,41 @@ func NewClientTools() *ClientTools {
 
 // AnalyzeSymbolRequest represents a request to analyze a symbol
 type AnalyzeSymbolRequest struct {
+	WorkspaceRoot          string `json:"workspace_root"`
+	FilePath               string `json:"file_path"`
+	Line                   int    `json:"line"`      // 0-based
+	Character              int    `json:"character"` // 0-based
+	IncludeHover           bool   `json:"include_hover"`
+	IncludeRefs            bool   `json:"include_refs"`
+	IncludeDefs            bool   `json:"include_defs"`
+	IncludeImplementations bool   `json:"include_implementations"`
+	IncludeTypeDefinitions bool   `json:"include_type_definitions"`
+	IncludeDeclarations    bool   `json:"include_declarations"`
+}
+
+// GotoRequest represents a generic goto request (implementation/type definition/declaration)
+type GotoRequest struct {
 	WorkspaceRoot string `json:"workspace_root"`
 	FilePath      string `json:"file_path"`
 	Line          int    `json:"line"`      // 0-based
 	Character     int    `json:"character"` // 0-based
-	IncludeHover  bool   `json:"include_hover"`
-	IncludeRefs   bool   `json:"include_refs"`
-	IncludeDefs   bool   `json:"include_defs"`
+}
+
+// GotoResponse represents a goto response
+type GotoResponse struct {
+	Locations []LocationResult `json:"locations"`
+	Error     string           `json:"error,omitempty"`
 }
 
 // AnalyzeSymbolResponse represents the response of symbol analysis
 type AnalyzeSymbolResponse struct {
-	Hover       *HoverResult     `json:"hover,omitempty"`
-	Definitions []LocationResult `json:"definitions,omitempty"`
-	References  []LocationResult `json:"references,omitempty"`
-	Error       string           `json:"error,omitempty"`
+	Hover           *HoverResult     `json:"hover,omitempty"`
+	Definitions     []LocationResult `json:"definitions,omitempty"`
+	References      []LocationResult `json:"references,omitempty"`
+	Implementations []LocationResult `json:"implementations,omitempty"`
+	TypeDefinitions []LocationResult `json:"type_definitions,omitempty"`
+	Declarations    []LocationResult `json:"declarations,omitempty"`
+	Error           string           `json:"error,omitempty"`
 }
 
 // HoverResult represents hover information
@@ -171,6 +191,36 @@ func (ct *ClientTools) AnalyzeSymbol(
 		response.References = convertLocationsToResults(references)
 	}
 
+	// Get implementations if requested
+	if req.IncludeImplementations {
+		implementations, err := server.GotoImplementation(ctx, uri, position)
+		if err != nil {
+			response.Error = fmt.Sprintf("failed to get implementations: %v", err)
+			return response
+		}
+		response.Implementations = convertLocationsToResults(implementations)
+	}
+
+	// Get type definitions if requested
+	if req.IncludeTypeDefinitions {
+		typeDefinitions, err := server.GotoTypeDefinition(ctx, uri, position)
+		if err != nil {
+			response.Error = fmt.Sprintf("failed to get type definitions: %v", err)
+			return response
+		}
+		response.TypeDefinitions = convertLocationsToResults(typeDefinitions)
+	}
+
+	// Get declarations if requested
+	if req.IncludeDeclarations {
+		declarations, err := server.GotoDeclaration(ctx, uri, position)
+		if err != nil {
+			response.Error = fmt.Sprintf("failed to get declarations: %v", err)
+			return response
+		}
+		response.Declarations = convertLocationsToResults(declarations)
+	}
+
 	return response
 }
 
@@ -277,6 +327,84 @@ func (ct *ClientTools) SearchSymbols(
 	return SymbolSearchResponse{Symbols: result}
 }
 
+// GotoImplementation finds implementations of the symbol at a specific position
+func (ct *ClientTools) GotoImplementation(
+	ctx context.Context,
+	req GotoRequest,
+) GotoResponse {
+	return ct.performGoto(ctx, req, "implementation")
+}
+
+// GotoTypeDefinition finds type definitions of the symbol at a specific position
+func (ct *ClientTools) GotoTypeDefinition(
+	ctx context.Context,
+	req GotoRequest,
+) GotoResponse {
+	return ct.performGoto(ctx, req, "typeDefinition")
+}
+
+// GotoDeclaration finds declarations of the symbol at a specific position
+func (ct *ClientTools) GotoDeclaration(
+	ctx context.Context,
+	req GotoRequest,
+) GotoResponse {
+	return ct.performGoto(ctx, req, "declaration")
+}
+
+// performGoto is a helper method to perform goto operations
+func (ct *ClientTools) performGoto(
+	ctx context.Context,
+	req GotoRequest,
+	gotoType string,
+) GotoResponse {
+	// Determine language from file extension
+	language := getLanguageFromPath(req.FilePath)
+	if language == "" {
+		return GotoResponse{Error: "unsupported file type"}
+	}
+
+	// Get or create language server
+	server, err := ct.manager.GetLanguageServer(ctx, req.WorkspaceRoot, language)
+	if err != nil {
+		return GotoResponse{Error: fmt.Sprintf("failed to get language server: %v", err)}
+	}
+
+	// Make file path absolute
+	absFilePath := req.FilePath
+	if !filepath.IsAbs(absFilePath) {
+		absRoot, _ := filepath.Abs(req.WorkspaceRoot)
+		absFilePath = filepath.Join(absRoot, req.FilePath)
+	}
+
+	uri := PathToURI(absFilePath)
+	position := Position{Line: req.Line, Character: req.Character}
+
+	// Ensure document is open
+	if err := ct.ensureDocumentOpen(ctx, server, uri, absFilePath); err != nil {
+		return GotoResponse{Error: fmt.Sprintf("failed to open document: %v", err)}
+	}
+
+	var locations []Location
+	var gotoErr error
+
+	switch gotoType {
+	case "implementation":
+		locations, gotoErr = server.GotoImplementation(ctx, uri, position)
+	case "typeDefinition":
+		locations, gotoErr = server.GotoTypeDefinition(ctx, uri, position)
+	case "declaration":
+		locations, gotoErr = server.GotoDeclaration(ctx, uri, position)
+	default:
+		return GotoResponse{Error: fmt.Sprintf("unknown goto type: %s", gotoType)}
+	}
+
+	if gotoErr != nil {
+		return GotoResponse{Error: fmt.Sprintf("failed to get %s: %v", gotoType, gotoErr)}
+	}
+
+	return GotoResponse{Locations: convertLocationsToResults(locations)}
+}
+
 // GetDocumentSymbols gets symbols for a specific document
 func (ct *ClientTools) GetDocumentSymbols(
 	ctx context.Context,
@@ -342,6 +470,92 @@ func (ct *ClientTools) GetServerInfo() []ServerInfo {
 // GetAdapterInfo returns information about registered adapters
 func (ct *ClientTools) GetAdapterInfo() []AdapterInfo {
 	return ct.manager.GetRegisteredAdapters()
+}
+
+// ReadFileRequest represents a request to read file content
+type ReadFileRequest struct {
+	FilePath  string `json:"file_path"`
+	StartLine int    `json:"start_line,omitempty"` // 1-based line number, 0 means from beginning
+	EndLine   int    `json:"end_line,omitempty"`   // 1-based line number, 0 means to end
+}
+
+// ReadFileResponse represents the response of reading a file
+type ReadFileResponse struct {
+	Content    string `json:"content"`
+	Range      *Range `json:"range,omitempty"` // Range of lines that were read
+	TotalLines int    `json:"total_lines"`     // Total lines in the file
+	Error      string `json:"error,omitempty"`
+}
+
+// ReadFile reads file content, optionally within a specified range
+func (ct *ClientTools) ReadFile(
+	ctx context.Context,
+	req ReadFileRequest,
+) ReadFileResponse {
+	// Make file path absolute if needed
+	absFilePath := req.FilePath
+	if !filepath.IsAbs(absFilePath) {
+		var err error
+		absFilePath, err = filepath.Abs(req.FilePath)
+		if err != nil {
+			return ReadFileResponse{Error: fmt.Sprintf("failed to get absolute path: %v", err)}
+		}
+	}
+
+	// Read entire file content
+	content, err := readFileContent(absFilePath)
+	if err != nil {
+		return ReadFileResponse{Error: fmt.Sprintf("failed to read file: %v", err)}
+	}
+
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	// If no range specified, return entire file
+	if req.StartLine == 0 && req.EndLine == 0 {
+		return ReadFileResponse{
+			Content:    content,
+			TotalLines: totalLines,
+		}
+	}
+
+	// Handle range selection
+	startIdx := 0
+	endIdx := totalLines
+
+	if req.StartLine > 0 {
+		startIdx = req.StartLine - 1 // Convert to 0-based
+		if startIdx >= totalLines {
+			return ReadFileResponse{Error: "start line exceeds file length"}
+		}
+	}
+
+	if req.EndLine > 0 {
+		endIdx = req.EndLine // EndLine is inclusive, so we don't subtract 1
+		if endIdx > totalLines {
+			endIdx = totalLines
+		}
+	}
+
+	if startIdx >= endIdx {
+		return ReadFileResponse{Error: "invalid range: start line must be less than end line"}
+	}
+
+	// Extract the requested range
+	selectedLines := lines[startIdx:endIdx]
+	selectedContent := strings.Join(selectedLines, "\n")
+
+	// Create range info
+	rangeInfo := &Range{
+		Start: Position{Line: startIdx, Character: 0},
+		End:   Position{Line: endIdx - 1, Character: len(lines[endIdx-1])},
+	}
+
+	return ReadFileResponse{
+		Content:    selectedContent,
+		Range:      rangeInfo,
+		TotalLines: totalLines,
+	}
 }
 
 // Helper functions

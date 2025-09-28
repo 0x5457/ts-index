@@ -1,16 +1,42 @@
 package models
 
-type SymbolKind string
+import "github.com/0x5457/ts-index/internal/lsp"
 
+// Use SymbolKind from lsp package
+type SymbolKind = lsp.SymbolKind
+
+// Symbol kind constants for backward compatibility
 const (
-	SymbolFunction  SymbolKind = "function"
-	SymbolMethod    SymbolKind = "method"
-	SymbolClass     SymbolKind = "class"
-	SymbolInterface SymbolKind = "interface"
-	SymbolType      SymbolKind = "type"
-	SymbolEnum      SymbolKind = "enum"
-	SymbolVariable  SymbolKind = "variable"
+	SymbolFunction  = lsp.SymbolKindFunction
+	SymbolMethod    = lsp.SymbolKindMethod
+	SymbolClass     = lsp.SymbolKindClass
+	SymbolInterface = lsp.SymbolKindInterface
+	SymbolType      = lsp.SymbolKindStruct // Using struct for type
+	SymbolEnum      = lsp.SymbolKindEnum
+	SymbolVariable  = lsp.SymbolKindVariable
 )
+
+// StringToSymbolKind converts string to SymbolKind
+func StringToSymbolKind(s string) SymbolKind {
+	switch s {
+	case "function":
+		return SymbolFunction
+	case "method":
+		return SymbolMethod
+	case "class":
+		return SymbolClass
+	case "interface":
+		return SymbolInterface
+	case "type":
+		return SymbolType
+	case "enum":
+		return SymbolEnum
+	case "variable":
+		return SymbolVariable
+	default:
+		return lsp.SymbolKindVariable // default fallback
+	}
+}
 
 type Symbol struct {
 	ID        string
@@ -76,27 +102,12 @@ type IndexProgress struct {
 
 // LSPHoverInfo represents hover information from LSP
 type LSPHoverInfo struct {
-	Contents string `json:"contents"`
-	Range    *Range `json:"range,omitempty"`
+	Contents string     `json:"contents"`
+	Range    *lsp.Range `json:"range,omitempty"`
 }
 
-// LSPLocation represents a location from LSP
-type LSPLocation struct {
-	URI   string `json:"uri"`
-	Range Range  `json:"range"`
-}
-
-// Range represents a range in a text document
-type Range struct {
-	Start Position `json:"start"`
-	End   Position `json:"end"`
-}
-
-// Position represents a position in a text document
-type Position struct {
-	Line      int `json:"line"`
-	Character int `json:"character"`
-}
+// Use Location from lsp package
+type Location = lsp.Location
 
 // LSPCompletionItem represents a completion item from LSP
 type LSPCompletionItem struct {
@@ -108,26 +119,26 @@ type LSPCompletionItem struct {
 
 // LSPSymbolInfo represents symbol information from LSP
 type LSPSymbolInfo struct {
-	Name          string      `json:"name"`
-	Kind          int         `json:"kind"`
-	Location      LSPLocation `json:"location"`
-	ContainerName string      `json:"containerName,omitempty"`
+	Name          string   `json:"name"`
+	Kind          int      `json:"kind"`
+	Location      Location `json:"location"`
+	ContainerName string   `json:"containerName,omitempty"`
 }
 
 // LSPDiagnostic represents a diagnostic from LSP
 type LSPDiagnostic struct {
-	Range    Range  `json:"range"`
-	Severity *int   `json:"severity,omitempty"`
-	Code     string `json:"code,omitempty"`
-	Source   string `json:"source,omitempty"`
-	Message  string `json:"message"`
+	Range    lsp.Range `json:"range"`
+	Severity *int      `json:"severity,omitempty"`
+	Code     string    `json:"code,omitempty"`
+	Source   string    `json:"source,omitempty"`
+	Message  string    `json:"message"`
 }
 
 // EnhancedSymbol extends Symbol with LSP information
 type EnhancedSymbol struct {
 	Symbol
 	LSPHover       *LSPHoverInfo   `json:"lsp_hover,omitempty"`
-	LSPDefinitions []LSPLocation   `json:"lsp_definitions,omitempty"`
-	LSPReferences  []LSPLocation   `json:"lsp_references,omitempty"`
+	LSPDefinitions []Location      `json:"lsp_definitions,omitempty"`
+	LSPReferences  []Location      `json:"lsp_references,omitempty"`
 	LSPDiagnostics []LSPDiagnostic `json:"lsp_diagnostics,omitempty"`
 }
