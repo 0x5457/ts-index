@@ -106,9 +106,6 @@ func NewHTTPClient(ctx context.Context, serverURL string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create http transport: %w", err)
 	}
-	if err := tr.Start(ctx); err != nil {
-		return nil, fmt.Errorf("start http transport: %w", err)
-	}
 	cli := client.NewClient(tr)
 	return initializeClient(ctx, cli)
 }
@@ -119,9 +116,6 @@ func NewSSEClient(ctx context.Context, sseURL string) (*Client, error) {
 	tr, err := transport.NewSSE(sseURL)
 	if err != nil {
 		return nil, fmt.Errorf("create sse transport: %w", err)
-	}
-	if err := tr.Start(ctx); err != nil {
-		return nil, fmt.Errorf("start sse transport: %w", err)
 	}
 	cli := client.NewClient(tr)
 	return initializeClient(ctx, cli)
@@ -135,9 +129,6 @@ func NewInProcessClient(
 ) (*Client, error) {
 	srv := New(searchService, indexer, ServerConfig{})
 	tr := transport.NewInProcessTransport(srv)
-	if err := tr.Start(ctx); err != nil {
-		return nil, fmt.Errorf("start in-process transport: %w", err)
-	}
 	cli := client.NewClient(tr)
 	return initializeClient(ctx, cli)
 }

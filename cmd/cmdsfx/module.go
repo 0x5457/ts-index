@@ -125,10 +125,7 @@ func (r *CommandRunner) RunMCPServer(transport, address string) error {
 		if addr == "" {
 			addr = ":8080"
 		}
-		sseSrv := server.NewSSEServer(r.mcpServer,
-			server.WithBaseURL(""),
-			server.WithStaticBasePath("/mcp"),
-		)
+		sseSrv := server.NewSSEServer(r.mcpServer)
 		return sseSrv.Start(addr)
 	default:
 		return fmt.Errorf(

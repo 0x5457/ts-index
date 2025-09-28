@@ -1,8 +1,6 @@
 package storagefx
 
 import (
-	"fmt"
-
 	"github.com/0x5457/ts-index/internal/config/configfx"
 	"github.com/0x5457/ts-index/internal/storage"
 	"github.com/0x5457/ts-index/internal/storage/sqlite"
@@ -20,7 +18,8 @@ type Params struct {
 // NewSymbolStore creates a new symbol store instance
 func NewSymbolStore(params Params) (storage.SymbolStore, error) {
 	if params.Config.DBPath == "" {
-		return nil, fmt.Errorf("database path must be specified")
+		// Return nil when no database path is provided (e.g., in MCP client mode)
+		return nil, nil
 	}
 	return sqlite.New(params.Config.DBPath)
 }
@@ -28,7 +27,8 @@ func NewSymbolStore(params Params) (storage.SymbolStore, error) {
 // NewVectorStore creates a new vector store instance
 func NewVectorStore(params Params) (storage.VectorStore, error) {
 	if params.Config.DBPath == "" {
-		return nil, fmt.Errorf("database path must be specified")
+		// Return nil when no database path is provided (e.g., in MCP client mode)
+		return nil, nil
 	}
 	return sqlvec.New(params.Config.DBPath, params.Config.VectorDimension)
 }
@@ -36,7 +36,7 @@ func NewVectorStore(params Params) (storage.VectorStore, error) {
 // Module provides storage components
 var Module = fx.Module("storage",
 	fx.Provide(
-		NewSymbolStore,
-		NewVectorStore,
+		fx.Annotate(NewSymbolStore, fx.ResultTags(`optional:"true"`)),
+		fx.Annotate(NewVectorStore, fx.ResultTags(`optional:"true"`)),
 	),
 )

@@ -49,8 +49,6 @@ func NewIndexCommand() *cobra.Command {
 				return fmt.Errorf("failed to start application: %w", err)
 			}
 
-			<-app.Done()
-
 			ctx, cancel = context.WithTimeout(context.Background(), fx.DefaultTimeout)
 			defer cancel()
 
