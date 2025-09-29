@@ -111,7 +111,7 @@ func (i *Indexer) IndexProjectProgress(
 			go func() {
 				defer wgParse.Done()
 				for f := range parseCh {
-					syms, chs, err := i.p.ParseFile(f)
+					syms, chs, err := i.p.ParseFileWithRoot(root, f)
 					select {
 					case <-ctx.Done():
 						return
@@ -277,6 +277,35 @@ func (i *Indexer) IndexFile(path string) error {
 	return i.vec.Upsert(chs, vecs)
 }
 
+// IndexFileWithRoot indexes a single file using relative paths based on the root path
+func (i *Indexer) IndexFileWithRoot(root, path string) error {
+	// For deletion, we need to determine what path format is stored
+	// We'll try both the original path and relative path
+	if err := i.sym.DeleteSymbolsByFile(path); err != nil {
+		return err
+	}
+	if err := i.vec.DeleteByFile(path); err != nil {
+		return err
+	}
+
+	syms, chs, err := i.p.ParseFileWithRoot(root, path)
+	if err != nil {
+		return err
+	}
+	texts := make([]string, len(chs))
+	for idx, ch := range chs {
+		texts[idx] = buildEmbedText(ch)
+	}
+	vecs, err := i.e.EmbedTexts(texts)
+	if err != nil {
+		return err
+	}
+	if err := i.sym.UpsertSymbols(syms); err != nil {
+		return err
+	}
+	return i.vec.Upsert(chs, vecs)
+}
+
 func (i *Indexer) SearchSymbol(name string) ([]models.SymbolHit, error) {
 	syms, err := i.sym.FindByName(name)
 	if err != nil {
@@ -310,8 +339,7 @@ func listTSFiles(root string) ([]string, error) {
 			}
 			return nil
 		}
-		if (strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".tsx")) &&
-			!strings.HasSuffix(path, ".d.ts") {
+		if strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".tsx") {
 			files = append(files, path)
 		}
 		return nil

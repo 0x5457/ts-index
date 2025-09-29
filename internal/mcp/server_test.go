@@ -21,9 +21,7 @@ func TestToolDefinitions(t *testing.T) {
 		toolName string
 	}{
 		{"semantic_search", newSemanticSearchTool, "semantic_search"},
-		{"symbol_search", newSymbolSearchTool, "symbol_search"},
 		{"lsp_analyze", newLSPAnalyzeTool, "lsp_analyze"},
-		{"lsp_completion", newLSPCompletionTool, "lsp_completion"},
 		{"lsp_symbols", newLSPSymbolsTool, "lsp_symbols"},
 		{"lsp_implementation", newLSPImplementationTool, "lsp_implementation"},
 		{"lsp_type_definition", newLSPTypeDefinitionTool, "lsp_type_definition"},
@@ -48,17 +46,6 @@ func TestSemanticSearchTool(t *testing.T) {
 	assert.Contains(t, tool.InputSchema.Properties, "query")
 	queryProp := tool.InputSchema.Properties["query"].(map[string]interface{})
 	assert.Equal(t, "string", queryProp["type"])
-}
-
-func TestSymbolSearchTool(t *testing.T) {
-	tool := newSymbolSearchTool()
-	assert.Equal(t, "symbol_search", tool.Name)
-	assert.Contains(t, tool.Description, "Exact symbol name search")
-
-	// check required params
-	assert.Contains(t, tool.InputSchema.Properties, "name")
-	nameProp := tool.InputSchema.Properties["name"].(map[string]interface{})
-	assert.Equal(t, "string", nameProp["type"])
 }
 
 func TestLSPAnalyzeTool(t *testing.T) {
@@ -95,24 +82,6 @@ func TestHandleSemanticSearchError(t *testing.T) {
 	}
 
 	result, err := srv.handleSemanticSearch(ctx, req)
-	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.NotEmpty(t, result.Content) // check error content
-}
-
-func TestHandleSymbolSearchError(t *testing.T) {
-	ctx := context.Background()
-
-	// test missing required params
-	req := mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      "symbol_search",
-			Arguments: map[string]any{},
-		},
-	}
-
-	srv := &Server{searchService: nil, indexer: nil}
-	result, err := srv.handleSymbolSearch(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.NotEmpty(t, result.Content) // check error content

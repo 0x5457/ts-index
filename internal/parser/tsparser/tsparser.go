@@ -22,7 +22,14 @@ func New() *TSParser { return &TSParser{} }
 func (p *TSParser) ParseProject(root string) ([]models.Symbol, []models.CodeChunk, error) {
 	var symbols []models.Symbol
 	var chunks []models.CodeChunk
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+
+	// Convert root to absolute path for consistent comparison
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get absolute path for root: %w", err)
+	}
+
+	walkErr := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -33,11 +40,17 @@ func (p *TSParser) ParseProject(root string) ([]models.Symbol, []models.CodeChun
 			}
 			return nil
 		}
-		if (!strings.HasSuffix(path, ".ts") && !strings.HasSuffix(path, ".tsx")) ||
-			strings.HasSuffix(path, ".d.ts") {
+		if !strings.HasSuffix(path, ".ts") && !strings.HasSuffix(path, ".tsx") {
 			return nil
 		}
-		syms, chs, perr := p.ParseFile(path)
+
+		// Convert absolute path to relative path
+		relPath, err := filepath.Rel(absRoot, path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path for %s: %w", path, err)
+		}
+
+		syms, chs, perr := p.parseFileWithRelativePath(path, relPath)
 		if perr != nil {
 			return perr
 		}
@@ -52,7 +65,39 @@ func (p *TSParser) ParseProject(root string) ([]models.Symbol, []models.CodeChun
 }
 
 func (p *TSParser) ParseFile(path string) ([]models.Symbol, []models.CodeChunk, error) {
-	code, err := os.ReadFile(path)
+	return p.parseFileWithRelativePath(path, path)
+}
+
+// ParseFileWithRoot parses a file and returns relative paths based on the root path
+func (p *TSParser) ParseFileWithRoot(
+	root, path string,
+) ([]models.Symbol, []models.CodeChunk, error) {
+	// Convert root to absolute path for consistent comparison
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get absolute path for root: %w", err)
+	}
+
+	// Convert file path to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get absolute path for file: %w", err)
+	}
+
+	// Calculate relative path
+	relPath, err := filepath.Rel(absRoot, absPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get relative path for %s: %w", path, err)
+	}
+
+	return p.parseFileWithRelativePath(absPath, relPath)
+}
+
+// parseFileWithRelativePath parses a file using absPath for reading but relPath for symbol/chunk metadata
+func (p *TSParser) parseFileWithRelativePath(
+	absPath, relPath string,
+) ([]models.Symbol, []models.CodeChunk, error) {
+	code, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,7 +106,7 @@ func (p *TSParser) ParseFile(path string) ([]models.Symbol, []models.CodeChunk, 
 
 	lang := tree_sitter.NewLanguage(tstypes.LanguageTypescript())
 	languageName := "ts"
-	if strings.HasSuffix(path, ".tsx") {
+	if strings.HasSuffix(relPath, ".tsx") {
 		lang = tree_sitter.NewLanguage(tstypes.LanguageTSX())
 		languageName = "tsx"
 	}
@@ -85,7 +130,7 @@ func (p *TSParser) ParseFile(path string) ([]models.Symbol, []models.CodeChunk, 
 			appendDecl(
 				&symbols,
 				&chunks,
-				path,
+				relPath,
 				languageName,
 				nt,
 				code,
@@ -95,13 +140,23 @@ func (p *TSParser) ParseFile(path string) ([]models.Symbol, []models.CodeChunk, 
 			)
 		case "class_declaration":
 			name := childIdentifier(n, code)
-			appendDecl(&symbols, &chunks, path, languageName, nt, code, n, models.SymbolClass, name)
+			appendDecl(
+				&symbols,
+				&chunks,
+				relPath,
+				languageName,
+				nt,
+				code,
+				n,
+				models.SymbolClass,
+				name,
+			)
 		case "method_definition", "method_signature":
 			name := childIdentifier(n, code)
 			appendDecl(
 				&symbols,
 				&chunks,
-				path,
+				relPath,
 				languageName,
 				nt,
 				code,
@@ -114,7 +169,7 @@ func (p *TSParser) ParseFile(path string) ([]models.Symbol, []models.CodeChunk, 
 			appendDecl(
 				&symbols,
 				&chunks,
-				path,
+				relPath,
 				languageName,
 				nt,
 				code,
@@ -124,15 +179,35 @@ func (p *TSParser) ParseFile(path string) ([]models.Symbol, []models.CodeChunk, 
 			)
 		case "type_alias_declaration":
 			name := childIdentifier(n, code)
-			appendDecl(&symbols, &chunks, path, languageName, nt, code, n, models.SymbolType, name)
+			appendDecl(
+				&symbols,
+				&chunks,
+				relPath,
+				languageName,
+				nt,
+				code,
+				n,
+				models.SymbolType,
+				name,
+			)
 		case "enum_declaration":
 			name := childIdentifier(n, code)
-			appendDecl(&symbols, &chunks, path, languageName, nt, code, n, models.SymbolEnum, name)
+			appendDecl(
+				&symbols,
+				&chunks,
+				relPath,
+				languageName,
+				nt,
+				code,
+				n,
+				models.SymbolEnum,
+				name,
+			)
 		case "lexical_declaration",
 			"variable_statement",
 			"variable_declaration",
 			"variable_declarator":
-			collectVariables(n, path, languageName, code, &symbols, &chunks)
+			collectVariables(n, relPath, languageName, code, &symbols, &chunks)
 		}
 		for i := uint(0); i < n.ChildCount(); i++ {
 			walk(n.Child(i))

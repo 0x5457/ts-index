@@ -9,6 +9,7 @@ import (
 type Indexer interface {
 	IndexProject(path string) error
 	IndexFile(path string) error
+	IndexFileWithRoot(root, path string) error
 	SearchSymbol(name string) ([]models.SymbolHit, error)
 	SearchSemantic(query string, topK int) ([]models.SemanticHit, error)
 

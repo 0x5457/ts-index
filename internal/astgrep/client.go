@@ -11,13 +11,15 @@ import (
 
 // Client wraps ast-grep command execution
 type Client struct {
-	executable string
+	executable  string
+	projectPath string
 }
 
-// NewClient creates a new ast-grep client
-func NewClient() *Client {
+// NewClient creates a new ast-grep client with project path
+func NewClient(projectPath string) *Client {
 	return &Client{
-		executable: "ast-grep", // assume ast-grep is in PATH
+		executable:  "ast-grep", // assume ast-grep is in PATH
+		projectPath: projectPath,
 	}
 }
 
@@ -51,23 +53,22 @@ type SearchRequest struct {
 	// Language specifies the programming language
 	Language string `json:"language,omitempty"`
 
-	// ProjectPath is the root path to search in
-	ProjectPath string `json:"project_path"`
-
 	// MaxResults limits the number of results
 	MaxResults int `json:"max_results,omitempty"`
 
 	// IncludeContext adds surrounding context lines
 	IncludeContext int `json:"include_context,omitempty"`
+
+	// Globs specifies file inclusion/exclusion patterns
+	// Multiple globs can be provided. Patterns starting with ! are exclusions.
+	// Later globs take precedence over earlier ones.
+	Globs []string `json:"globs,omitempty"`
 }
 
 // RuleSearchRequest represents parameters for rule-based search
 type RuleSearchRequest struct {
 	// Rule is the YAML rule content
 	Rule string `json:"rule"`
-
-	// ProjectPath is the root path to search in
-	ProjectPath string `json:"project_path"`
 
 	// MaxResults limits the number of results
 	MaxResults int `json:"max_results,omitempty"`
@@ -128,13 +129,22 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) SearchResponse {
 	// Add JSON output
 	args = append(args, "--json")
 
+	if req.IncludeContext == 0 {
+		req.IncludeContext = 5
+	}
+
 	// Add context if specified
 	if req.IncludeContext > 0 {
 		args = append(args, "--context", fmt.Sprintf("%d", req.IncludeContext))
 	}
 
+	// Add globs if specified
+	for _, glob := range req.Globs {
+		args = append(args, "--globs", glob)
+	}
+
 	// Add project path
-	args = append(args, req.ProjectPath)
+	args = append(args, c.projectPath)
 
 	return c.executeSearch(ctx, args, req.MaxResults)
 }
@@ -151,7 +161,7 @@ func (c *Client) SearchByRule(ctx context.Context, req RuleSearchRequest) Search
 	args := []string{"run"}
 	args = append(args, "--rule", ruleFile)
 	args = append(args, "--json")
-	args = append(args, req.ProjectPath)
+	args = append(args, c.projectPath)
 
 	return c.executeSearch(ctx, args, req.MaxResults)
 }

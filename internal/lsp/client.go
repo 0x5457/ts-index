@@ -121,10 +121,23 @@ func (c *LSPClient) Start(ctx context.Context, workspaceRoot string) error {
 
 	// Start the process
 	if err := c.cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start language server: %w", err)
+		errMsg := fmt.Sprintf("failed to start language server %s: %v", c.config.Command, err)
+		fmt.Fprintf(os.Stderr, "[LSP ERROR] %s\n", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
-	log.Printf("Started language server process: %s %v", c.config.Command, c.config.Args)
+	fmt.Printf(
+		"Started language server process: %s %v (PID: %d)\n",
+		c.config.Command,
+		c.config.Args,
+		c.cmd.Process.Pid,
+	)
+	log.Printf(
+		"Started language server process: %s %v (PID: %d)",
+		c.config.Command,
+		c.config.Args,
+		c.cmd.Process.Pid,
+	)
 
 	atomic.StoreInt32(&c.running, 1)
 
@@ -345,7 +358,15 @@ func (c *LSPClient) handleStdout() {
 		// Parse JSON-RPC message
 		var response LSPResponse
 		if err := json.Unmarshal(content, &response); err != nil {
-			log.Printf("Error parsing JSON-RPC response: %v", err)
+			errMsg := fmt.Sprintf(
+				"Error parsing JSON-RPC response from"+
+					"%s: %v\nContent: %s",
+				c.config.Command,
+				err,
+				string(content),
+			)
+			fmt.Fprintf(os.Stderr, "[LSP ERROR] %s\n", errMsg)
+			log.Printf("%s", errMsg)
 			continue
 		}
 
@@ -357,8 +378,14 @@ func (c *LSPClient) handleStdout() {
 
 			if ok && respChan != nil {
 				if response.Error != nil {
-					// Handle error response
-					log.Printf("LSP Error: %s", response.Error.Message)
+					// Handle error response with detailed output
+					errDetails := fmt.Sprintf("LSP Request Error (ID: %d): Code=%d, Message=%s",
+						*response.ID, response.Error.Code, response.Error.Message)
+					if len(response.Error.Data) > 0 {
+						errDetails += fmt.Sprintf(", Data=%s", string(response.Error.Data))
+					}
+					fmt.Fprintf(os.Stderr, "[LSP ERROR] %s\n", errDetails)
+					log.Printf("%s", errDetails)
 				} else {
 					select {
 					case respChan <- response.Result:
@@ -376,10 +403,14 @@ func (c *LSPClient) handleStderr() {
 	scanner := bufio.NewScanner(c.stderr)
 	for scanner.Scan() && c.IsRunning() {
 		line := scanner.Text()
+		// Output stderr with more prominence
+		fmt.Fprintf(os.Stderr, "[LSP ERROR] %s: %s\n", c.config.Command, line)
 		log.Printf("LSP stderr: %s", line)
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("Error reading stderr: %v", err)
+		errMsg := fmt.Sprintf("Error reading stderr from %s: %v", c.config.Command, err)
+		fmt.Fprintf(os.Stderr, "[LSP ERROR] %s\n", errMsg)
+		log.Printf("%s", errMsg)
 	}
 }
 

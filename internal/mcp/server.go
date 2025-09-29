@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 
 	"github.com/0x5457/ts-index/internal/astgrep"
 	"github.com/0x5457/ts-index/internal/indexer"
@@ -13,10 +16,11 @@ import (
 
 // Server wraps an MCP server with direct interface dependencies
 type Server struct {
-	server        *server.MCPServer
-	searchService *search.Service // Search service (can be nil)
-	indexer       indexer.Indexer // Indexer (can be nil)
-	config        ServerConfig    // Server configuration
+	server         *server.MCPServer
+	searchService  *search.Service  // Search service (can be nil)
+	indexer        indexer.Indexer  // Indexer (can be nil)
+	config         ServerConfig     // Server configuration
+	lspClientTools *lsp.ClientTools // Pre-initialized LSP client tools
 }
 
 // New returns an MCP server with the given services and configuration.
@@ -36,13 +40,16 @@ func New(
 		),
 	}
 
+	// Pre-initialize LSP client tools if we have a project configured
+	if config.Project != "" {
+		srv.initializeLSPClient()
+	}
+
 	// Search tools
 	srv.server.AddTool(newSemanticSearchTool(), srv.handleSemanticSearch)
-	srv.server.AddTool(newSymbolSearchTool(), srv.handleSymbolSearch)
 
 	// LSP tools
 	srv.server.AddTool(newLSPAnalyzeTool(), srv.handleLSPAnalyze)
-	srv.server.AddTool(newLSPCompletionTool(), srv.handleLSPCompletion)
 	srv.server.AddTool(newLSPSymbolsTool(), srv.handleLSPSymbols)
 	srv.server.AddTool(newLSPImplementationTool(), srv.handleLSPImplementation)
 	srv.server.AddTool(newLSPTypeDefinitionTool(), srv.handleLSPTypeDefinition)
@@ -50,14 +57,67 @@ func New(
 
 	// AST-grep tools
 	srv.server.AddTool(newAstGrepSearchTool(), srv.handleAstGrepSearch)
-	srv.server.AddTool(newAstGrepRuleTool(), srv.handleAstGrepRule)
-	srv.server.AddTool(newAstGrepTestTool(), srv.handleAstGrepTest)
-	srv.server.AddTool(newAstGrepSyntaxTreeTool(), srv.handleAstGrepSyntaxTree)
 
 	// File tools
 	srv.server.AddTool(newReadFileTool(), srv.handleReadFile)
 
 	return srv.server
+}
+
+// initializeLSPClient pre-initializes the LSP client to catch errors early
+func (srv *Server) initializeLSPClient() {
+	fmt.Printf("Initializing LSP client for project: %s\n", srv.config.Project)
+
+	srv.lspClientTools = lsp.NewClientTools()
+
+	// Test LSP connection by trying to create a language server
+	ctx := context.Background()
+
+	// Try to get adapter info to validate the setup
+	adapters := srv.lspClientTools.GetAdapterInfo()
+	if len(adapters) == 0 {
+		fmt.Fprintf(os.Stderr, "[LSP WARNING] No LSP adapters available\n")
+		return
+	}
+
+	// Try to test the server startup with a simple operation
+	// We'll test this by checking if we can start a language server
+	go func() {
+		// Create a test request to warm up the language server
+		result := srv.lspClientTools.SearchSymbols(ctx, lsp.SymbolSearchRequest{
+			WorkspaceRoot: srv.config.Project,
+			Query:         "", // Empty query to test connection
+			MaxResults:    1,
+		})
+
+		if result.Error != "" {
+			fmt.Fprintf(
+				os.Stderr,
+				"[LSP ERROR] Language server initialization failed: %s\n",
+				result.Error,
+			)
+			fmt.Fprintf(
+				os.Stderr,
+				"[LSP ERROR] This may cause LSP tools to fail during operation\n",
+			)
+		} else {
+			fmt.Printf("LSP client initialized successfully\n")
+		}
+	}()
+}
+
+// getLSPClientTools returns the pre-initialized LSP client tools or creates new ones as fallback
+func (srv *Server) getLSPClientTools() *lsp.ClientTools {
+	if srv.lspClientTools != nil {
+		return srv.lspClientTools
+	}
+
+	// Fallback: create new client tools if pre-initialization failed
+	fmt.Fprintf(
+		os.Stderr,
+		"[LSP WARNING] Using fallback LSP client tools (pre-initialization may have failed)\n",
+	)
+	return lsp.NewClientTools()
 }
 
 // Tool definitions
@@ -67,14 +127,6 @@ func newSemanticSearchTool() mcp.Tool {
 		mcp.WithDescription("Semantic code search by natural language query"),
 		mcp.WithString("query", mcp.Description("Natural language query"), mcp.Required()),
 		mcp.WithNumber("top_k", mcp.Description("Top K results"), mcp.DefaultNumber(5)),
-	)
-}
-
-func newSymbolSearchTool() mcp.Tool {
-	return mcp.NewTool(
-		"symbol_search",
-		mcp.WithDescription("Exact symbol name search in symbol store"),
-		mcp.WithString("name", mcp.Description("Symbol name"), mcp.Required()),
 	)
 }
 
@@ -88,17 +140,6 @@ func newLSPAnalyzeTool() mcp.Tool {
 		mcp.WithBoolean("hover", mcp.Description("Include hover"), mcp.DefaultBool(true)),
 		mcp.WithBoolean("refs", mcp.Description("Include references"), mcp.DefaultBool(false)),
 		mcp.WithBoolean("defs", mcp.Description("Include definitions"), mcp.DefaultBool(true)),
-	)
-}
-
-func newLSPCompletionTool() mcp.Tool {
-	return mcp.NewTool(
-		"lsp_completion",
-		mcp.WithDescription("Get completion items at position"),
-		mcp.WithString("file", mcp.Description("File path"), mcp.Required()),
-		mcp.WithNumber("line", mcp.Description("0-based line"), mcp.Required()),
-		mcp.WithNumber("character", mcp.Description("0-based character"), mcp.Required()),
-		mcp.WithNumber("max_results", mcp.Description("Max results"), mcp.DefaultNumber(20)),
 	)
 }
 
@@ -162,28 +203,14 @@ func (srv *Server) handleSemanticSearch(
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultStructuredOnly(hits), nil
-}
 
-func (srv *Server) handleSymbolSearch(
-	_ context.Context,
-	req mcp.CallToolRequest,
-) (*mcp.CallToolResult, error) {
-	name, err := req.RequireString("name")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	// Wrap the hits array in an object to satisfy MCP protocol expectations
+	result := map[string]interface{}{
+		"hits":  hits,
+		"query": query,
+		"total": len(hits),
 	}
-
-	// Use default indexer for symbol search
-	if srv.indexer == nil {
-		return mcp.NewToolResultError("indexer not initialized"), nil
-	}
-
-	res, err := srv.indexer.SearchSymbol(name)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultStructuredOnly(res), nil
+	return mcp.NewToolResultStructuredOnly(result), nil
 }
 
 func (srv *Server) handleLSPAnalyze(
@@ -213,8 +240,12 @@ func (srv *Server) handleLSPAnalyze(
 	refs := req.GetBool("refs", false)
 	defs := req.GetBool("defs", true)
 
-	clientTools := lsp.NewClientTools()
-	defer func() { _ = clientTools.Cleanup() }()
+	// Use pre-initialized client tools or create new ones
+	clientTools := srv.getLSPClientTools()
+	if clientTools == nil {
+		return mcp.NewToolResultError("LSP client not available"), nil
+	}
+
 	result := clientTools.AnalyzeSymbol(ctx, lsp.AnalyzeSymbolRequest{
 		WorkspaceRoot: project,
 		FilePath:      file,
@@ -231,6 +262,14 @@ func (srv *Server) handleReadFile(
 	ctx context.Context,
 	req mcp.CallToolRequest,
 ) (*mcp.CallToolResult, error) {
+	// Use server config project
+	project := srv.config.Project
+	if project == "" {
+		return mcp.NewToolResultError(
+			"workspace path must be specified in server configuration",
+		), nil
+	}
+
 	filePath, err := req.RequireString("file_path")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -239,13 +278,17 @@ func (srv *Server) handleReadFile(
 	startLine := req.GetInt("start_line", 0)
 	endLine := req.GetInt("end_line", 0)
 
-	clientTools := lsp.NewClientTools()
-	defer func() { _ = clientTools.Cleanup() }()
+	// Use pre-initialized client tools or create new ones
+	clientTools := srv.getLSPClientTools()
+	if clientTools == nil {
+		return mcp.NewToolResultError("LSP client not available"), nil
+	}
 
 	result := clientTools.ReadFile(ctx, lsp.ReadFileRequest{
-		FilePath:  filePath,
-		StartLine: startLine,
-		EndLine:   endLine,
+		FilePath:      filePath,
+		WorkspaceRoot: project,
+		StartLine:     startLine,
+		EndLine:       endLine,
 	})
 
 	if result.Error != "" {
@@ -309,8 +352,12 @@ func (srv *Server) handleLSPSymbols(
 	}
 	max := req.GetInt("max_results", 50)
 
-	clientTools := lsp.NewClientTools()
-	defer func() { _ = clientTools.Cleanup() }()
+	// Use pre-initialized client tools or create new ones
+	clientTools := srv.getLSPClientTools()
+	if clientTools == nil {
+		return mcp.NewToolResultError("LSP client not available"), nil
+	}
+
 	result := clientTools.SearchSymbols(ctx, lsp.SymbolSearchRequest{
 		WorkspaceRoot: project,
 		Query:         query,
@@ -345,8 +392,12 @@ func (srv *Server) handleLSPGoto(
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	clientTools := lsp.NewClientTools()
-	defer func() { _ = clientTools.Cleanup() }()
+	// Use pre-initialized client tools or create new ones
+	clientTools := srv.getLSPClientTools()
+	if clientTools == nil {
+		return mcp.NewToolResultError("LSP client not available"), nil
+	}
+
 	result := gotoFunc(clientTools, ctx, lsp.GotoRequest{
 		WorkspaceRoot: project,
 		FilePath:      file,
@@ -398,45 +449,11 @@ func newAstGrepSearchTool() mcp.Tool {
 			mcp.Description("Number of context lines to include"),
 			mcp.DefaultNumber(0),
 		),
-	)
-}
-
-func newAstGrepRuleTool() mcp.Tool {
-	return mcp.NewTool(
-		"ast_grep_rule",
-		mcp.WithDescription("Search using ast-grep YAML rule"),
-		mcp.WithString("rule", mcp.Description("YAML rule content"), mcp.Required()),
-		mcp.WithNumber(
-			"max_results",
-			mcp.Description("Maximum number of results"),
-			mcp.DefaultNumber(50),
-		),
-	)
-}
-
-func newAstGrepTestTool() mcp.Tool {
-	return mcp.NewTool(
-		"ast_grep_test",
-		mcp.WithDescription("Test ast-grep rule against code snippet"),
-		mcp.WithString("rule", mcp.Description("YAML rule content"), mcp.Required()),
-		mcp.WithString("code", mcp.Description("Code snippet to test"), mcp.Required()),
 		mcp.WithString(
-			"language",
-			mcp.Description("Programming language"),
-			mcp.DefaultString("typescript"),
-		),
-	)
-}
-
-func newAstGrepSyntaxTreeTool() mcp.Tool {
-	return mcp.NewTool(
-		"ast_grep_syntax_tree",
-		mcp.WithDescription("Dump syntax tree of code snippet"),
-		mcp.WithString("code", mcp.Description("Code snippet to analyze"), mcp.Required()),
-		mcp.WithString(
-			"language",
-			mcp.Description("Programming language"),
-			mcp.DefaultString("typescript"),
+			"globs",
+			mcp.Description(
+				"Comma-separated glob patterns for file inclusion/exclusion. Patterns starting with ! are exclusions.",
+			),
 		),
 	)
 }
@@ -481,100 +498,24 @@ func (srv *Server) handleAstGrepSearch(
 	maxResults := req.GetInt("max_results", 50)
 	context := req.GetInt("context", 0)
 
-	client := astgrep.NewClient()
+	// Parse globs from comma-separated string
+	var globs []string
+	if globsStr := req.GetString("globs", ""); globsStr != "" {
+		// Split by comma and trim spaces
+		for _, glob := range strings.Split(globsStr, ",") {
+			if trimmed := strings.TrimSpace(glob); trimmed != "" {
+				globs = append(globs, trimmed)
+			}
+		}
+	}
+
+	client := astgrep.NewClient(project)
 	result := client.Search(ctx, astgrep.SearchRequest{
 		Pattern:        pattern,
 		Language:       language,
-		ProjectPath:    project,
 		MaxResults:     maxResults,
 		IncludeContext: context,
-	})
-
-	if result.Error != "" {
-		return mcp.NewToolResultError(result.Error), nil
-	}
-
-	return mcp.NewToolResultStructuredOnly(result), nil
-}
-
-func (srv *Server) handleAstGrepRule(
-	ctx context.Context,
-	req mcp.CallToolRequest,
-) (*mcp.CallToolResult, error) {
-	// Use server config project
-	project := srv.config.Project
-	if project == "" {
-		return mcp.NewToolResultError(
-			"workspace path must be specified in server configuration",
-		), nil
-	}
-
-	rule, err := req.RequireString("rule")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	maxResults := req.GetInt("max_results", 50)
-
-	client := astgrep.NewClient()
-	result := client.SearchByRule(ctx, astgrep.RuleSearchRequest{
-		Rule:        rule,
-		ProjectPath: project,
-		MaxResults:  maxResults,
-	})
-
-	if result.Error != "" {
-		return mcp.NewToolResultError(result.Error), nil
-	}
-
-	return mcp.NewToolResultStructuredOnly(result), nil
-}
-
-func (srv *Server) handleAstGrepTest(
-	ctx context.Context,
-	req mcp.CallToolRequest,
-) (*mcp.CallToolResult, error) {
-	rule, err := req.RequireString("rule")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	code, err := req.RequireString("code")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	language := req.GetString("language", "typescript")
-
-	client := astgrep.NewClient()
-	result := client.TestRule(ctx, astgrep.TestRuleRequest{
-		Rule:     rule,
-		Code:     code,
-		Language: language,
-	})
-
-	if result.Error != "" {
-		return mcp.NewToolResultError(result.Error), nil
-	}
-
-	return mcp.NewToolResultStructuredOnly(result), nil
-}
-
-func (srv *Server) handleAstGrepSyntaxTree(
-	ctx context.Context,
-	req mcp.CallToolRequest,
-) (*mcp.CallToolResult, error) {
-	code, err := req.RequireString("code")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	language := req.GetString("language", "typescript")
-
-	client := astgrep.NewClient()
-	result := client.DumpSyntaxTree(ctx, astgrep.SyntaxTreeRequest{
-		Code:     code,
-		Language: language,
+		Globs:          globs,
 	})
 
 	if result.Error != "" {

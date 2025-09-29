@@ -474,9 +474,10 @@ func (ct *ClientTools) GetAdapterInfo() []AdapterInfo {
 
 // ReadFileRequest represents a request to read file content
 type ReadFileRequest struct {
-	FilePath  string `json:"file_path"`
-	StartLine int    `json:"start_line,omitempty"` // 1-based line number, 0 means from beginning
-	EndLine   int    `json:"end_line,omitempty"`   // 1-based line number, 0 means to end
+	FilePath      string `json:"file_path"`
+	WorkspaceRoot string `json:"workspace_root,omitempty"` // Project root path
+	StartLine     int    `json:"start_line,omitempty"`     // 1-based line number, 0 means from beginning
+	EndLine       int    `json:"end_line,omitempty"`       // 1-based line number, 0 means to end
 }
 
 // ReadFileResponse represents the response of reading a file
@@ -495,10 +496,22 @@ func (ct *ClientTools) ReadFile(
 	// Make file path absolute if needed
 	absFilePath := req.FilePath
 	if !filepath.IsAbs(absFilePath) {
-		var err error
-		absFilePath, err = filepath.Abs(req.FilePath)
-		if err != nil {
-			return ReadFileResponse{Error: fmt.Sprintf("failed to get absolute path: %v", err)}
+		if req.WorkspaceRoot != "" {
+			// If workspace root is provided, make path relative to workspace root
+			absWorkspaceRoot, err := filepath.Abs(req.WorkspaceRoot)
+			if err != nil {
+				return ReadFileResponse{
+					Error: fmt.Sprintf("failed to get absolute workspace path: %v", err),
+				}
+			}
+			absFilePath = filepath.Join(absWorkspaceRoot, req.FilePath)
+		} else {
+			// Fallback to current working directory
+			var err error
+			absFilePath, err = filepath.Abs(req.FilePath)
+			if err != nil {
+				return ReadFileResponse{Error: fmt.Sprintf("failed to get absolute path: %v", err)}
+			}
 		}
 	}
 
